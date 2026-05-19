@@ -6,38 +6,55 @@ import {
   ViewMode,
 } from "@linkwarden/types/global";
 import { useRouter } from "next/router";
-import React, { ReactElement, useEffect, useState } from "react";
+import React, { ReactElement, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import LinkListOptions from "@/components/LinkListOptions";
 import getServerSideProps from "@/lib/client/getServerSideProps";
 import { useTranslation } from "next-i18next";
 import Links from "@/components/LinkViews/Links";
 import { NextPageWithLayout } from "./_app";
+import useLocalSettingsStore from "@/store/localSettings";
 
 const Page: NextPageWithLayout = () => {
   const { t } = useTranslation();
 
   const router = useRouter();
+  const { settings, updateSettings } = useLocalSettingsStore();
 
-  const [viewMode, setViewMode] = useState<ViewMode>(
-    (localStorage.getItem("viewMode") as ViewMode) || ViewMode.Card
-  );
-
-  const [sortBy, setSortBy] = useState<Sort>(
-    Number(localStorage.getItem("sortBy")) ?? Sort.DateNewestFirst
-  );
+  // 使用 store 中的状态
+  const viewMode = settings.viewMode as ViewMode;
+  const sortBy = settings.sortBy ?? Sort.DateNewestFirst;
 
   const [editMode, setEditMode] = useState(false);
-  const [activeLink, setActiveLink] =
-    useState<LinkIncludingShortenedCollectionAndTags | null>(null);
 
   useEffect(() => {
     if (editMode) return setEditMode(false);
   }, [router]);
 
+  // 安全地处理搜索查询字符串
+  const searchQueryString = useMemo(() => {
+    const q = router.query.q;
+    if (typeof q === "string" && q.trim()) {
+      try {
+        return decodeURIComponent(q);
+      } catch {
+        return q;
+      }
+    }
+    return undefined;
+  }, [router.query.q]);
+
+  const setViewMode = (mode: ViewMode) => {
+    updateSettings({ viewMode: mode });
+  };
+
+  const setSortBy = (sort: Sort) => {
+    updateSettings({ sortBy: sort });
+  };
+
   const { links, data } = useLinks({
     sort: sortBy,
-    searchQueryString: decodeURIComponent(router.query.q as string),
+    searchQueryString,
   });
 
   return (
