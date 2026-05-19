@@ -1,0 +1,250 @@
+diff --git a/apps/web/components/SearchBar.tsx b/apps/web/components/SearchBar.tsx
+index f981ca23..a10bffcf 100644
+--- a/apps/web/components/SearchBar.tsx
++++ b/apps/web/components/SearchBar.tsx
+@@ -49,11 +49,32 @@ export default function SearchBar({ placeholder }: Props) {
+   const [dismissSearchNote, setDismissSearchNote] = useState(false);
+ 
+   useEffect(() => {
+-    router.query.q
+-      ? setSearchQuery(decodeURIComponent(router.query.q as string))
+-      : setSearchQuery("");
++    setSearchQuery(typeof router.query.q === "string" ? router.query.q : "");
+   }, [router.query.q]);
+ 
++  const submitSearch = () => {
++    const normalizedSearchQuery = searchQuery.trim();
++
++    if (router.pathname.startsWith("/public")) {
++      if (!normalizedSearchQuery) {
++        return router.push("/public/collections/" + router.query.id);
++      }
++
++      return router.push(
++        "/public/collections/" +
++          router.query.id +
++          "?q=" +
++          encodeURIComponent(normalizedSearchQuery)
++      );
++    }
++
++    if (!normalizedSearchQuery) {
++      return router.push("/search");
++    }
++
++    return router.push("/search?q=" + encodeURIComponent(normalizedSearchQuery));
++  };
++
+   const handleSuggestionClick = (operator: string) => {
+     setSearchQuery((prev) => {
+       const needsSpace = prev.length > 0 && !prev.endsWith(" ");
+@@ -92,22 +113,7 @@ export default function SearchBar({ placeholder }: Props) {
+         }}
+         onKeyDown={(e) => {
+           if (e.key === "Enter") {
+-            if (router.pathname.startsWith("/public")) {
+-              if (!searchQuery) {
+-                return router.push("/public/collections/" + router.query.id);
+-              }
+-
+-              return router.push(
+-                "/public/collections/" +
+-                  router.query.id +
+-                  "?q=" +
+-                  encodeURIComponent(searchQuery || "")
+-              );
+-            } else {
+-              return router.push(
+-                "/search?q=" + encodeURIComponent(searchQuery)
+-              );
+-            }
++            return submitSearch();
+           }
+         }}
+         className="border border-neutral-content bg-base-200 focus:border-primary py-1 rounded-md pl-9 pr-2 w-full max-w-[15rem] md:w-80 md:max-w-full outline-none"
+diff --git a/apps/web/pages/search.tsx b/apps/web/pages/search.tsx
+index 4f3b830d..e166afc9 100644
+--- a/apps/web/pages/search.tsx
++++ b/apps/web/pages/search.tsx
+@@ -6,7 +6,7 @@ import {
+   ViewMode,
+ } from "@linkwarden/types/global";
+ import { useRouter } from "next/router";
+-import React, { ReactElement, useEffect, useState } from "react";
++import React, { ReactElement, useEffect, useMemo, useState } from "react";
+ import PageHeader from "@/components/PageHeader";
+ import LinkListOptions from "@/components/LinkListOptions";
+ import getServerSideProps from "@/lib/client/getServerSideProps";
+@@ -19,13 +19,22 @@ const Page: NextPageWithLayout = () => {
+ 
+   const router = useRouter();
+ 
+-  const [viewMode, setViewMode] = useState<ViewMode>(
+-    (localStorage.getItem("viewMode") as ViewMode) || ViewMode.Card
+-  );
++  const [viewMode, setViewMode] = useState<ViewMode>(() => {
++    if (typeof window === "undefined") return ViewMode.Card;
+ 
+-  const [sortBy, setSortBy] = useState<Sort>(
+-    Number(localStorage.getItem("sortBy")) ?? Sort.DateNewestFirst
+-  );
++    return (localStorage.getItem("viewMode") as ViewMode) || ViewMode.Card;
++  });
++
++  const [sortBy, setSortBy] = useState<Sort>(() => {
++    if (typeof window === "undefined") return Sort.DateNewestFirst;
++
++    const storedSortBy = localStorage.getItem("sortBy");
++    const parsedSortBy = storedSortBy !== null ? Number(storedSortBy) : NaN;
++
++    return Number.isNaN(parsedSortBy)
++      ? Sort.DateNewestFirst
++      : (parsedSortBy as Sort);
++  });
+ 
+   const [editMode, setEditMode] = useState(false);
+   const [activeLink, setActiveLink] =
+@@ -35,9 +44,17 @@ const Page: NextPageWithLayout = () => {
+     if (editMode) return setEditMode(false);
+   }, [router]);
+ 
++  const searchQueryString = useMemo(() => {
++    if (typeof router.query.q !== "string") return undefined;
++
++    const normalizedSearchQuery = router.query.q.trim();
++
++    return normalizedSearchQuery.length > 0 ? normalizedSearchQuery : undefined;
++  }, [router.query.q]);
++
+   const { links, data } = useLinks({
+     sort: sortBy,
+-    searchQueryString: decodeURIComponent(router.query.q as string),
++    searchQueryString,
+   });
+ 
+   return (
+@@ -50,15 +67,18 @@ const Page: NextPageWithLayout = () => {
+         setSortBy={setSortBy}
+         editMode={editMode}
+         setEditMode={setEditMode}
+-        links={links}
++        links={searchQueryString ? links : []}
+       >
+         <PageHeader icon={"bi-search"} title={t("search_results")} />
+       </LinkListOptions>
+ 
+-      {!data.isLoading && links && !links[0] && <p>{t("nothing_found")}</p>}
++      {!searchQueryString && <p>{t("search_for_links")}</p>}
++      {searchQueryString && !data.isLoading && links && !links[0] && (
++        <p>{t("nothing_found")}</p>
++      )}
+       <Links
+         editMode={editMode}
+-        links={links}
++        links={searchQueryString ? links : []}
+         layout={viewMode}
+         useData={data}
+       />
+diff --git a/packages/router/links.tsx b/packages/router/links.tsx
+index e797b298..747f1dcc 100644
+--- a/packages/router/links.tsx
++++ b/packages/router/links.tsx
+@@ -31,27 +31,51 @@ const useLinks = (params: LinkRequestQuery = {}, auth?: MobileAuth) => {
+       : 0) ??
+     0;
+ 
++  const hasSearchQueryStringParam = Object.prototype.hasOwnProperty.call(
++    params,
++    "searchQueryString"
++  );
++
++  const normalizedSearchQueryString = useMemo(() => {
++    if (typeof params.searchQueryString !== "string") return undefined;
++
++    const trimmedSearchQuery = params.searchQueryString.trim();
++
++    return trimmedSearchQuery.length > 0 ? trimmedSearchQuery : undefined;
++  }, [params.searchQueryString]);
++
+   const queryString = useMemo(() => {
+     return buildQueryString({
+       sort,
+       collectionId: params.collectionId,
+       tagId: params.tagId,
+       pinnedOnly: params.pinnedOnly ?? undefined,
+-      searchQueryString: params.searchQueryString,
++      searchQueryString: normalizedSearchQueryString,
+     });
+   }, [
+     sort,
+     params.collectionId,
+     params.tagId,
+     params.pinnedOnly,
+-    params.searchQueryString,
++    normalizedSearchQueryString,
+   ]);
+ 
+-  const query = useFetchLinks(queryString, auth);
++  const queryKeyParams = useMemo(() => {
++    if (!hasSearchQueryStringParam || normalizedSearchQueryString) {
++      return queryString;
++    }
++
++    return `__empty_search__${queryString ? `&${queryString}` : ""}`;
++  }, [hasSearchQueryStringParam, normalizedSearchQueryString, queryString]);
++
++  const shouldFetchLinks =
++    !hasSearchQueryStringParam || normalizedSearchQueryString !== undefined;
++
++  const query = useFetchLinks(queryString, auth, shouldFetchLinks, queryKeyParams);
+ 
+   const links = useMemo(() => {
+     return query.data?.pages?.flatMap((p) => p.links ?? []) ?? [];
+-  }, [query.dataUpdatedAt]);
++  }, [query.data]);
+ 
+   return {
+     links,
+@@ -59,7 +83,12 @@ const useLinks = (params: LinkRequestQuery = {}, auth?: MobileAuth) => {
+   };
+ };
+ 
+-const useFetchLinks = (params: string, auth?: MobileAuth) => {
++const useFetchLinks = (
++  params: string,
++  auth?: MobileAuth,
++  enabled = true,
++  queryKeyParams?: string
++) => {
+   let status: "loading" | "authenticated" | "unauthenticated";
+ 
+   if (!auth) {
+@@ -70,15 +99,13 @@ const useFetchLinks = (params: string, auth?: MobileAuth) => {
+   }
+ 
+   return useInfiniteQuery({
+-    queryKey: ["links", { params }],
+-    queryFn: async (params) => {
++    queryKey: ["links", { params: queryKeyParams ?? params }],
++    queryFn: async (queryContext) => {
+       const url =
+         (auth?.instance ? auth?.instance : "") +
+         "/api/v1/search?cursor=" +
+-        params.pageParam +
+-        ((params.queryKey[1] as any).params
+-          ? "&" + (params.queryKey[1] as any).params
+-          : "");
++        queryContext.pageParam +
++        (params ? "&" + params : "");
+       const response = await fetch(
+         url,
+         auth?.session
+@@ -99,7 +126,7 @@ const useFetchLinks = (params: string, auth?: MobileAuth) => {
+     initialPageParam: 0,
+     refetchOnWindowFocus: false,
+     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+-    enabled: status === "authenticated",
++    enabled: status === "authenticated" && enabled,
+   });
+ };
+ 

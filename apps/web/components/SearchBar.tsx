@@ -49,10 +49,31 @@ export default function SearchBar({ placeholder }: Props) {
   const [dismissSearchNote, setDismissSearchNote] = useState(false);
 
   useEffect(() => {
-    router.query.q
-      ? setSearchQuery(decodeURIComponent(router.query.q as string))
-      : setSearchQuery("");
+    setSearchQuery(typeof router.query.q === "string" ? router.query.q : "");
   }, [router.query.q]);
+
+  const submitSearch = () => {
+    const normalizedSearchQuery = searchQuery.trim();
+
+    if (router.pathname.startsWith("/public")) {
+      if (!normalizedSearchQuery) {
+        return router.push("/public/collections/" + router.query.id);
+      }
+
+      return router.push(
+        "/public/collections/" +
+          router.query.id +
+          "?q=" +
+          encodeURIComponent(normalizedSearchQuery)
+      );
+    }
+
+    if (!normalizedSearchQuery) {
+      return router.push("/search");
+    }
+
+    return router.push("/search?q=" + encodeURIComponent(normalizedSearchQuery));
+  };
 
   const handleSuggestionClick = (operator: string) => {
     setSearchQuery((prev) => {
@@ -92,22 +113,7 @@ export default function SearchBar({ placeholder }: Props) {
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
-            if (router.pathname.startsWith("/public")) {
-              if (!searchQuery) {
-                return router.push("/public/collections/" + router.query.id);
-              }
-
-              return router.push(
-                "/public/collections/" +
-                  router.query.id +
-                  "?q=" +
-                  encodeURIComponent(searchQuery || "")
-              );
-            } else {
-              return router.push(
-                "/search?q=" + encodeURIComponent(searchQuery)
-              );
-            }
+            return submitSearch();
           }
         }}
         className="border border-neutral-content bg-base-200 focus:border-primary py-1 rounded-md pl-9 pr-2 w-full max-w-[15rem] md:w-80 md:max-w-full outline-none"

@@ -31,27 +31,51 @@ const useLinks = (params: LinkRequestQuery = {}, auth?: MobileAuth) => {
       : 0) ??
     0;
 
+  const hasSearchQueryStringParam = Object.prototype.hasOwnProperty.call(
+    params,
+    "searchQueryString"
+  );
+
+  const normalizedSearchQueryString = useMemo(() => {
+    if (typeof params.searchQueryString !== "string") return undefined;
+
+    const trimmedSearchQuery = params.searchQueryString.trim();
+
+    return trimmedSearchQuery.length > 0 ? trimmedSearchQuery : undefined;
+  }, [params.searchQueryString]);
+
   const queryString = useMemo(() => {
     return buildQueryString({
       sort,
       collectionId: params.collectionId,
       tagId: params.tagId,
       pinnedOnly: params.pinnedOnly ?? undefined,
-      searchQueryString: params.searchQueryString,
+      searchQueryString: normalizedSearchQueryString,
     });
   }, [
     sort,
     params.collectionId,
     params.tagId,
     params.pinnedOnly,
-    params.searchQueryString,
+    normalizedSearchQueryString,
   ]);
 
-  const query = useFetchLinks(queryString, auth);
+  const queryKeyParams = useMemo(() => {
+    if (!hasSearchQueryStringParam || normalizedSearchQueryString) {
+      return queryString;
+    }
+
+    return `__empty_search__${queryString ? `&${queryString}` : ""}`;
+  }, [hasSearchQueryStringParam, normalizedSearchQueryString, queryString]);
+
+  const shouldFetchLinks =
+    !hasSearchQueryStringParam || normalizedSearchQueryString !== undefined;
+
+  const query = useFetchLinks(queryString, auth, shouldFetchLinks, queryKeyParams);
 
   const links = useMemo(() => {
     return query.data?.pages?.flatMap((p) => p.links ?? []) ?? [];
-  }, [query.dataUpdatedAt]);
+  }, [query.data]);
 
   return {
     links,
@@ -59,7 +83,12 @@ const useLinks = (params: LinkRequestQuery = {}, auth?: MobileAuth) => {
   };
 };
 
-const useFetchLinks = (params: string, auth?: MobileAuth) => {
+const useFetchLinks = (
+  params: string,
+  auth?: MobileAuth,
+  enabled = true,
+  queryKeyParams?: string
+) => {
   let status: "loading" | "authenticated" | "unauthenticated";
 
   if (!auth) {
@@ -70,15 +99,13 @@ const useFetchLinks = (params: string, auth?: MobileAuth) => {
   }
 
   return useInfiniteQuery({
-    queryKey: ["links", { params }],
-    queryFn: async (params) => {
+    queryKey: ["links", { params: queryKeyParams ?? params }],
+    queryFn: async (queryContext) => {
       const url =
         (auth?.instance ? auth?.instance : "") +
         "/api/v1/search?cursor=" +
-        params.pageParam +
-        ((params.queryKey[1] as any).params
-          ? "&" + (params.queryKey[1] as any).params
-          : "");
+        queryContext.pageParam +
+        (params ? "&" + params : "");
       const response = await fetch(
         url,
         auth?.session
@@ -99,7 +126,7 @@ const useFetchLinks = (params: string, auth?: MobileAuth) => {
     initialPageParam: 0,
     refetchOnWindowFocus: false,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    enabled: status === "authenticated",
+    enabled: status === "authenticated" && enabled,
   });
 };
 

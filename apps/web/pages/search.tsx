@@ -6,7 +6,7 @@ import {
   ViewMode,
 } from "@linkwarden/types/global";
 import { useRouter } from "next/router";
-import React, { ReactElement, useEffect, useState } from "react";
+import React, { ReactElement, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import LinkListOptions from "@/components/LinkListOptions";
 import getServerSideProps from "@/lib/client/getServerSideProps";
@@ -19,13 +19,22 @@ const Page: NextPageWithLayout = () => {
 
   const router = useRouter();
 
-  const [viewMode, setViewMode] = useState<ViewMode>(
-    (localStorage.getItem("viewMode") as ViewMode) || ViewMode.Card
-  );
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return ViewMode.Card;
 
-  const [sortBy, setSortBy] = useState<Sort>(
-    Number(localStorage.getItem("sortBy")) ?? Sort.DateNewestFirst
-  );
+    return (localStorage.getItem("viewMode") as ViewMode) || ViewMode.Card;
+  });
+
+  const [sortBy, setSortBy] = useState<Sort>(() => {
+    if (typeof window === "undefined") return Sort.DateNewestFirst;
+
+    const storedSortBy = localStorage.getItem("sortBy");
+    const parsedSortBy = storedSortBy !== null ? Number(storedSortBy) : NaN;
+
+    return Number.isNaN(parsedSortBy)
+      ? Sort.DateNewestFirst
+      : (parsedSortBy as Sort);
+  });
 
   const [editMode, setEditMode] = useState(false);
   const [activeLink, setActiveLink] =
@@ -35,9 +44,17 @@ const Page: NextPageWithLayout = () => {
     if (editMode) return setEditMode(false);
   }, [router]);
 
+  const searchQueryString = useMemo(() => {
+    if (typeof router.query.q !== "string") return undefined;
+
+    const normalizedSearchQuery = router.query.q.trim();
+
+    return normalizedSearchQuery.length > 0 ? normalizedSearchQuery : undefined;
+  }, [router.query.q]);
+
   const { links, data } = useLinks({
     sort: sortBy,
-    searchQueryString: decodeURIComponent(router.query.q as string),
+    searchQueryString,
   });
 
   return (
@@ -50,15 +67,18 @@ const Page: NextPageWithLayout = () => {
         setSortBy={setSortBy}
         editMode={editMode}
         setEditMode={setEditMode}
-        links={links}
+        links={searchQueryString ? links : []}
       >
         <PageHeader icon={"bi-search"} title={t("search_results")} />
       </LinkListOptions>
 
-      {!data.isLoading && links && !links[0] && <p>{t("nothing_found")}</p>}
+      {!searchQueryString && <p>{t("search_for_links")}</p>}
+      {searchQueryString && !data.isLoading && links && !links[0] && (
+        <p>{t("nothing_found")}</p>
+      )}
       <Links
         editMode={editMode}
-        links={links}
+        links={searchQueryString ? links : []}
         layout={viewMode}
         useData={data}
       />
