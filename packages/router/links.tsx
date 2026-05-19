@@ -105,11 +105,14 @@ const useFetchLinks = (params: string, auth?: MobileAuth) => {
 
 const buildQueryString = (params: LinkRequestQuery) => {
   return Object.keys(params)
-    .filter((key) => params[key as keyof LinkRequestQuery] !== undefined)
+    .filter((key) => {
+      const val = params[key as keyof LinkRequestQuery];
+      return val !== undefined && val !== "" && val !== null;
+    })
     .map(
       (key) =>
         `${encodeURIComponent(key)}=${encodeURIComponent(
-          params[key as keyof LinkRequestQuery] as string
+          params[key as keyof LinkRequestQuery] as string | number | boolean
         )}`
     )
     .join("&");
