@@ -20,11 +20,13 @@ const Page: NextPageWithLayout = () => {
   const router = useRouter();
 
   const [viewMode, setViewMode] = useState<ViewMode>(
-    (localStorage.getItem("viewMode") as ViewMode) || ViewMode.Card
+    (typeof window !== "undefined" && (localStorage.getItem("viewMode") as ViewMode)) || ViewMode.Card
   );
 
   const [sortBy, setSortBy] = useState<Sort>(
-    Number(localStorage.getItem("sortBy")) ?? Sort.DateNewestFirst
+    typeof window !== "undefined" && localStorage.getItem("sortBy") !== null
+      ? Number(localStorage.getItem("sortBy"))
+      : Sort.DateNewestFirst
   );
 
   const [editMode, setEditMode] = useState(false);
@@ -35,10 +37,28 @@ const Page: NextPageWithLayout = () => {
     if (editMode) return setEditMode(false);
   }, [router]);
 
-  const { links, data } = useLinks({
-    sort: sortBy,
-    searchQueryString: decodeURIComponent(router.query.q as string),
-  });
+  const getSearchQuery = () => {
+    if (typeof router.query.q !== "string") return "";
+    try {
+      return decodeURIComponent(router.query.q);
+    } catch {
+      return router.query.q;
+    }
+  };
+
+  const searchQuery = getSearchQuery();
+  const isSearchValid = router.isReady && Boolean(searchQuery);
+
+  const { links: fetchedLinks, data } = useLinks(
+    {
+      sort: sortBy,
+      searchQueryString: isSearchValid ? searchQuery : "___invalid_search___",
+    },
+    undefined,
+    isSearchValid
+  );
+
+  const links = isSearchValid ? fetchedLinks : [];
 
   return (
     <div className="p-3 flex flex-col gap-5 w-full h-full">
@@ -55,13 +75,20 @@ const Page: NextPageWithLayout = () => {
         <PageHeader icon={"bi-search"} title={t("search_results")} />
       </LinkListOptions>
 
-      {!data.isLoading && links && !links[0] && <p>{t("nothing_found")}</p>}
-      <Links
-        editMode={editMode}
-        links={links}
-        layout={viewMode}
-        useData={data}
-      />
+      {!isSearchValid && router.isReady && (
+        <p>{t("search_for_links")}</p>
+      )}
+      {isSearchValid && !data.isLoading && links && !links[0] && (
+        <p>{t("nothing_found")}</p>
+      )}
+      {isSearchValid && (
+        <Links
+          editMode={editMode}
+          links={links}
+          layout={viewMode}
+          useData={data}
+        />
+      )}
     </div>
   );
 };

@@ -49,9 +49,15 @@ export default function SearchBar({ placeholder }: Props) {
   const [dismissSearchNote, setDismissSearchNote] = useState(false);
 
   useEffect(() => {
-    router.query.q
-      ? setSearchQuery(decodeURIComponent(router.query.q as string))
-      : setSearchQuery("");
+    if (typeof router.query.q === "string") {
+      try {
+        setSearchQuery(decodeURIComponent(router.query.q));
+      } catch {
+        setSearchQuery(router.query.q);
+      }
+    } else {
+      setSearchQuery("");
+    }
   }, [router.query.q]);
 
   const handleSuggestionClick = (operator: string) => {

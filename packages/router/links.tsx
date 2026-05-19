@@ -23,7 +23,7 @@ import getLinkTypeFromFormat from "@linkwarden/lib/getLinkTypeFromFormat";
 import type toaster from "react-hot-toast";
 import { TFunction } from "next-i18next";
 
-const useLinks = (params: LinkRequestQuery = {}, auth?: MobileAuth) => {
+const useLinks = (params: LinkRequestQuery = {}, auth?: MobileAuth, enabled: boolean = true) => {
   const sort =
     params.sort ??
     (typeof window !== "undefined"
@@ -47,11 +47,11 @@ const useLinks = (params: LinkRequestQuery = {}, auth?: MobileAuth) => {
     params.searchQueryString,
   ]);
 
-  const query = useFetchLinks(queryString, auth);
+  const query = useFetchLinks(queryString, auth, enabled);
 
   const links = useMemo(() => {
     return query.data?.pages?.flatMap((p) => p.links ?? []) ?? [];
-  }, [query.dataUpdatedAt]);
+  }, [query.data]);
 
   return {
     links,
@@ -59,7 +59,7 @@ const useLinks = (params: LinkRequestQuery = {}, auth?: MobileAuth) => {
   };
 };
 
-const useFetchLinks = (params: string, auth?: MobileAuth) => {
+const useFetchLinks = (params: string, auth?: MobileAuth, enabled: boolean = true) => {
   let status: "loading" | "authenticated" | "unauthenticated";
 
   if (!auth) {
@@ -99,7 +99,7 @@ const useFetchLinks = (params: string, auth?: MobileAuth) => {
     initialPageParam: 0,
     refetchOnWindowFocus: false,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    enabled: status === "authenticated",
+    enabled: status === "authenticated" && enabled,
   });
 };
 
