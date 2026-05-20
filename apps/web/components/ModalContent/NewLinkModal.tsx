@@ -40,8 +40,18 @@ export default function NewLinkModal({ onClose }: Props) {
   });
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [link, setLink] = useState<PostLinkSchemaType>(initial);
   const [optionsExpanded, setOptionsExpanded] = useState(false);
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [batchUrls, setBatchUrls] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [batchStatus, setBatchStatus] = useState<{
+    total: number;
+    success: number;
+    failed: number;
+    failedUrls: string[];
+  }>({ total: 0, success: 0, failed: 0, failedUrls: [] });
   const router = useRouter();
   const { data: collections = [] } = useCollections();
 
@@ -99,22 +109,95 @@ export default function NewLinkModal({ onClose }: Props) {
     onClose();
   };
 
+  const submitBatch = async () => {
+    if (isSubmitting) return;
+    
+    setIsSubmitting(true);
+    setBatchStatus({ total: 0, success: 0, failed: 0, failedUrls: [] });
+
+    const urlLines = batchUrls
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    const uniqueUrls = [...new Set(urlLines)];
+    setBatchStatus((prev) => ({ ...prev, total: uniqueUrls.length }));
+
+    const failedUrls: string[] = [];
+    let successCount = 0;
+
+    for (const url of uniqueUrls) {
+      try {
+        const linkData: PostLinkSchemaType = {
+          ...link,
+          url,
+          name: "",
+        };
+        
+        await addLink.mutateAsync(linkData);
+        successCount++;
+        setBatchStatus((prev) => ({ ...prev, success: successCount }));
+      } catch (error) {
+        failedUrls.push(url);
+        setBatchStatus((prev) => ({
+          ...prev,
+          failed: failedUrls.length,
+          failedUrls: [...failedUrls],
+        }));
+      }
+    }
+
+    setIsSubmitting(false);
+
+    if (failedUrls.length === 0) {
+      setBatchUrls("");
+      onClose();
+    } else {
+      setBatchUrls(failedUrls.join("\n"));
+      toast.error(t("some_links_failed"));
+    }
+  };
+
   return (
     <Modal toggleModal={onClose}>
       <p className="text-xl font-thin">{t("create_new_link")}</p>
 
       <Separator className="my-3" />
 
+      <div className="flex justify-between items-center mb-3">
+        <Button
+          variant={isBatchMode ? "accent" : "ghost"}
+          size="sm"
+          onClick={() => {
+            setIsBatchMode(!isBatchMode);
+            setBatchUrls("");
+            setBatchStatus({ total: 0, success: 0, failed: 0, failedUrls: [] });
+          }}
+        >
+          {t("batch_mode")}
+        </Button>
+      </div>
+
       <div className="grid grid-flow-row-dense sm:grid-cols-5 gap-3">
         <div className="sm:col-span-3 col-span-5">
           <p className="mb-2">{t("link")}</p>
-          <TextInput
-            ref={inputRef}
-            value={link.url || ""}
-            onChange={(e) => setLink({ ...link, url: e.target.value })}
-            placeholder={t("link_url_placeholder")}
-            className="bg-base-200"
-          />
+          {isBatchMode ? (
+            <textarea
+              ref={textareaRef}
+              value={batchUrls}
+              onChange={(e) => setBatchUrls(e.target.value)}
+              placeholder={t("batch_links_placeholder")}
+              className="resize-none w-full h-40 rounded-md p-2 border-neutral-content bg-base-200 focus:border-primary border-solid border outline-none duration-100"
+            />
+          ) : (
+            <TextInput
+              ref={inputRef}
+              value={link.url || ""}
+              onChange={(e) => setLink({ ...link, url: e.target.value })}
+              placeholder={t("link_url_placeholder")}
+              className="bg-base-200"
+            />
+          )}
         </div>
         <div className="sm:col-span-2 col-span-5">
           <p className="mb-2">{t("collection")}</p>
@@ -129,6 +212,24 @@ export default function NewLinkModal({ onClose }: Props) {
           )}
         </div>
       </div>
+
+      {isBatchMode && batchStatus.total > 0 && (
+        <div className="mt-3 p-3 bg-base-200 rounded-md">
+          <p className="text-sm">
+            {t("progress")}: {batchStatus.success + batchStatus.failed}/{batchStatus.total}
+          </p>
+          {batchStatus.success > 0 && (
+            <p className="text-sm text-green-500">
+              ✓ {t("success")}: {batchStatus.success}
+            </p>
+          )}
+          {batchStatus.failed > 0 && (
+            <p className="text-sm text-red-500">
+              ✗ {t("failed")}: {batchStatus.failed}
+            </p>
+          )}
+        </div>
+      )}
       {optionsExpanded && (
         <div className="mt-5 grid sm:grid-cols-2 gap-3">
           <div>
@@ -172,8 +273,21 @@ export default function NewLinkModal({ onClose }: Props) {
           <p>{optionsExpanded ? t("hide_options") : t("more_options")}</p>
           <i className={`bi-chevron-${optionsExpanded ? "up" : "down"}`} />
         </Button>
-        <Button variant="accent" onClick={submit}>
-          {t("create_link")}
+        <Button
+          variant="accent"
+          onClick={isBatchMode ? submitBatch : submit}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? (
+            <>
+              <i className="bi-spinner animate-spin mr-2" />
+              {t("creating")}
+            </>
+          ) : isBatchMode ? (
+            t("create_links")
+          ) : (
+            t("create_link")
+          )}
         </Button>
       </div>
     </Modal>
