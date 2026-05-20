@@ -1,4 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import CollectionSelection from "@/components/InputSelect/CollectionSelection";
 import TagSelection from "@/components/InputSelect/TagSelection";
 import TextInput from "@/components/TextInput";
@@ -40,10 +46,29 @@ export default function NewLinkModal({ onClose }: Props) {
   });
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [link, setLink] = useState<PostLinkSchemaType>(initial);
   const [optionsExpanded, setOptionsExpanded] = useState(false);
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [batchUrls, setBatchUrls] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
   const { data: collections = [] } = useCollections();
+
+  const parsedBatchUrls = useMemo(() => {
+    if (!isBatchMode || !batchUrls.trim()) return [];
+    const lines = batchUrls.split("\n");
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const raw of lines) {
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      if (seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      result.push(trimmed);
+    }
+    return result;
+  }, [batchUrls, isBatchMode]);
 
   const setCollection = (e: any) => {
     if (e?.__isNew__) e.value = undefined;
@@ -82,10 +107,23 @@ export default function NewLinkModal({ onClose }: Props) {
   }, []);
 
   useLayoutEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    if (isBatchMode) {
+      textareaRef.current?.focus();
+    } else {
+      inputRef.current?.focus();
+    }
+  }, [isBatchMode]);
 
-  const submit = async () => {
+  const buildLinkPayload = (url: string): PostLinkSchemaType => ({
+    type: "url",
+    url,
+    name: "",
+    description: link.description,
+    tags: link.tags,
+    collection: link.collection,
+  });
+
+  const submitSingle = async () => {
     const dataValidation = PostLinkSchema.safeParse(link);
 
     if (!dataValidation.success)
@@ -99,47 +137,135 @@ export default function NewLinkModal({ onClose }: Props) {
     onClose();
   };
 
+  const submitBatch = async () => {
+    if (!parsedBatchUrls.length) return;
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+    const total = parsedBatchUrls.length;
+    const failedUrls: string[] = [];
+
+    for (let i = 0; i < parsedBatchUrls.length; i++) {
+      const url = parsedBatchUrls[i];
+      const payload = buildLinkPayload(url);
+
+      const dataValidation = PostLinkSchema.safeParse(payload);
+      if (!dataValidation.success) {
+        failedUrls.push(url);
+        continue;
+      }
+
+      try {
+        await addLink.mutateAsync(payload);
+      } catch {
+        failedUrls.push(url);
+      }
+    }
+
+    const successCount = total - failedUrls.length;
+
+    if (failedUrls.length === 0) {
+      toast.success(t("batch_create_success", { count: total }));
+      setBatchUrls("");
+      setIsSubmitting(false);
+      onClose();
+    } else {
+      toast.error(
+        t("batch_create_partial_failure", {
+          success: successCount,
+          failed: failedUrls.length,
+        })
+      );
+      setBatchUrls(failedUrls.join("\n"));
+      setIsSubmitting(false);
+    }
+  };
+
+  const submit = async () => {
+    if (isBatchMode) {
+      await submitBatch();
+    } else {
+      await submitSingle();
+    }
+  };
+
   return (
     <Modal toggleModal={onClose}>
       <p className="text-xl font-thin">{t("create_new_link")}</p>
 
       <Separator className="my-3" />
 
-      <div className="grid grid-flow-row-dense sm:grid-cols-5 gap-3">
-        <div className="sm:col-span-3 col-span-5">
+      {isBatchMode ? (
+        <div>
           <p className="mb-2">{t("link")}</p>
-          <TextInput
-            ref={inputRef}
-            value={link.url || ""}
-            onChange={(e) => setLink({ ...link, url: e.target.value })}
-            placeholder={t("link_url_placeholder")}
-            className="bg-base-200"
+          <textarea
+            ref={textareaRef}
+            value={batchUrls}
+            onChange={(e) => setBatchUrls(e.target.value)}
+            placeholder={t("batch_urls_placeholder")}
+            disabled={isSubmitting}
+            className="resize-y w-full h-40 rounded-md p-2 border-neutral-content bg-base-200 focus:border-primary border-solid border outline-none duration-100"
           />
-        </div>
-        <div className="sm:col-span-2 col-span-5">
-          <p className="mb-2">{t("collection")}</p>
-          {link.collection?.name && (
-            <CollectionSelection
-              onChange={setCollection}
-              defaultValue={{
-                value: link.collection?.id,
-                label: link.collection?.name || "Unorganized",
-              }}
-            />
+          {parsedBatchUrls.length > 0 && (
+            <p className="text-xs text-neutral mt-1">
+              {t("batch_urls_count", { count: parsedBatchUrls.length })}
+            </p>
           )}
         </div>
-      </div>
-      {optionsExpanded && (
-        <div className="mt-5 grid sm:grid-cols-2 gap-3">
-          <div>
-            <p className="mb-2">{t("name")}</p>
+      ) : (
+        <div className="grid grid-flow-row-dense sm:grid-cols-5 gap-3">
+          <div className="sm:col-span-3 col-span-5">
+            <p className="mb-2">{t("link")}</p>
             <TextInput
-              value={link.name}
-              onChange={(e) => setLink({ ...link, name: e.target.value })}
-              placeholder={t("link_name_placeholder")}
+              ref={inputRef}
+              value={link.url || ""}
+              onChange={(e) => setLink({ ...link, url: e.target.value })}
+              placeholder={t("link_url_placeholder")}
               className="bg-base-200"
             />
           </div>
+          <div className="sm:col-span-2 col-span-5">
+            <p className="mb-2">{t("collection")}</p>
+            {link.collection?.name && (
+              <CollectionSelection
+                onChange={setCollection}
+                defaultValue={{
+                  value: link.collection?.id,
+                  label: link.collection?.name || "Unorganized",
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {(optionsExpanded || isBatchMode) && (
+        <div className="mt-5 grid sm:grid-cols-2 gap-3">
+          {!isBatchMode && (
+            <div>
+              <p className="mb-2">{t("name")}</p>
+              <TextInput
+                value={link.name}
+                onChange={(e) => setLink({ ...link, name: e.target.value })}
+                placeholder={t("link_name_placeholder")}
+                className="bg-base-200"
+              />
+            </div>
+          )}
+          {isBatchMode && (
+            <div>
+              <p className="mb-2">{t("collection")}</p>
+              {link.collection?.name && (
+                <CollectionSelection
+                  onChange={setCollection}
+                  defaultValue={{
+                    value: link.collection?.id,
+                    label: link.collection?.name || "Unorganized",
+                  }}
+                />
+              )}
+            </div>
+          )}
           <div>
             <p className="mb-2">{t("tags")}</p>
             <TagSelection
@@ -162,18 +288,60 @@ export default function NewLinkModal({ onClose }: Props) {
           </div>
         </div>
       )}
+
+      {isBatchMode && isSubmitting && (
+        <div className="mt-3">
+          <div className="flex items-center gap-2 text-sm text-neutral">
+            <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+            <span>{t("batch_creating_links")}</span>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mt-5">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex items-center px-2 w-fit text-sm"
+            onClick={() => setOptionsExpanded(!optionsExpanded)}
+          >
+            <p>
+              {optionsExpanded || isBatchMode
+                ? t("hide_options")
+                : t("more_options")}
+            </p>
+            <i
+              className={`bi-chevron-${
+                optionsExpanded || isBatchMode ? "up" : "down"
+              }`}
+            />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex items-center px-2 w-fit text-sm"
+            onClick={() => {
+              setIsBatchMode(!isBatchMode);
+              if (!isBatchMode) {
+                setOptionsExpanded(true);
+              }
+            }}
+          >
+            <i className={`bi-${isBatchMode ? "toggle-on" : "toggle-off"}`} />
+            <p className="ml-1">{t("batch_mode")}</p>
+          </Button>
+        </div>
         <Button
-          variant="ghost"
-          size="sm"
-          className="flex items-center px-2 w-fit text-sm"
-          onClick={() => setOptionsExpanded(!optionsExpanded)}
+          variant="accent"
+          onClick={submit}
+          disabled={isSubmitting}
         >
-          <p>{optionsExpanded ? t("hide_options") : t("more_options")}</p>
-          <i className={`bi-chevron-${optionsExpanded ? "up" : "down"}`} />
-        </Button>
-        <Button variant="accent" onClick={submit}>
-          {t("create_link")}
+          {isBatchMode
+            ? isSubmitting
+              ? t("batch_creating")
+              : t("batch_create_links", { count: parsedBatchUrls.length })
+            : t("create_link")}
         </Button>
       </div>
     </Modal>

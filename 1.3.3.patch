@@ -1,0 +1,592 @@
+diff --git a/apps/web/components/ModalContent/NewLinkModal.tsx b/apps/web/components/ModalContent/NewLinkModal.tsx
+index 9a4b74d7..55e37090 100644
+--- a/apps/web/components/ModalContent/NewLinkModal.tsx
++++ b/apps/web/components/ModalContent/NewLinkModal.tsx
+@@ -1,4 +1,10 @@
+-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
++import React, {
++  useEffect,
++  useLayoutEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
+ import CollectionSelection from "@/components/InputSelect/CollectionSelection";
+ import TagSelection from "@/components/InputSelect/TagSelection";
+ import TextInput from "@/components/TextInput";
+@@ -40,11 +46,30 @@ export default function NewLinkModal({ onClose }: Props) {
+   });
+ 
+   const inputRef = useRef<HTMLInputElement>(null);
++  const textareaRef = useRef<HTMLTextAreaElement>(null);
+   const [link, setLink] = useState<PostLinkSchemaType>(initial);
+   const [optionsExpanded, setOptionsExpanded] = useState(false);
++  const [isBatchMode, setIsBatchMode] = useState(false);
++  const [batchUrls, setBatchUrls] = useState("");
++  const [isSubmitting, setIsSubmitting] = useState(false);
+   const router = useRouter();
+   const { data: collections = [] } = useCollections();
+ 
++  const parsedBatchUrls = useMemo(() => {
++    if (!isBatchMode || !batchUrls.trim()) return [];
++    const lines = batchUrls.split("\n");
++    const seen = new Set<string>();
++    const result: string[] = [];
++    for (const raw of lines) {
++      const trimmed = raw.trim();
++      if (!trimmed) continue;
++      if (seen.has(trimmed)) continue;
++      seen.add(trimmed);
++      result.push(trimmed);
++    }
++    return result;
++  }, [batchUrls, isBatchMode]);
++
+   const setCollection = (e: any) => {
+     if (e?.__isNew__) e.value = undefined;
+     setLink({
+@@ -82,10 +107,23 @@ export default function NewLinkModal({ onClose }: Props) {
+   }, []);
+ 
+   useLayoutEffect(() => {
+-    inputRef.current?.focus();
+-  }, []);
++    if (isBatchMode) {
++      textareaRef.current?.focus();
++    } else {
++      inputRef.current?.focus();
++    }
++  }, [isBatchMode]);
+ 
+-  const submit = async () => {
++  const buildLinkPayload = (url: string): PostLinkSchemaType => ({
++    type: "url",
++    url,
++    name: "",
++    description: link.description,
++    tags: link.tags,
++    collection: link.collection,
++  });
++
++  const submitSingle = async () => {
+     const dataValidation = PostLinkSchema.safeParse(link);
+ 
+     if (!dataValidation.success)
+@@ -99,47 +137,135 @@ export default function NewLinkModal({ onClose }: Props) {
+     onClose();
+   };
+ 
++  const submitBatch = async () => {
++    if (!parsedBatchUrls.length) return;
++    if (isSubmitting) return;
++
++    setIsSubmitting(true);
++    const total = parsedBatchUrls.length;
++    const failedUrls: string[] = [];
++
++    for (let i = 0; i < parsedBatchUrls.length; i++) {
++      const url = parsedBatchUrls[i];
++      const payload = buildLinkPayload(url);
++
++      const dataValidation = PostLinkSchema.safeParse(payload);
++      if (!dataValidation.success) {
++        failedUrls.push(url);
++        continue;
++      }
++
++      try {
++        await addLink.mutateAsync(payload);
++      } catch {
++        failedUrls.push(url);
++      }
++    }
++
++    const successCount = total - failedUrls.length;
++
++    if (failedUrls.length === 0) {
++      toast.success(t("batch_create_success", { count: total }));
++      setBatchUrls("");
++      setIsSubmitting(false);
++      onClose();
++    } else {
++      toast.error(
++        t("batch_create_partial_failure", {
++          success: successCount,
++          failed: failedUrls.length,
++        })
++      );
++      setBatchUrls(failedUrls.join("\n"));
++      setIsSubmitting(false);
++    }
++  };
++
++  const submit = async () => {
++    if (isBatchMode) {
++      await submitBatch();
++    } else {
++      await submitSingle();
++    }
++  };
++
+   return (
+     <Modal toggleModal={onClose}>
+       <p className="text-xl font-thin">{t("create_new_link")}</p>
+ 
+       <Separator className="my-3" />
+ 
+-      <div className="grid grid-flow-row-dense sm:grid-cols-5 gap-3">
+-        <div className="sm:col-span-3 col-span-5">
++      {isBatchMode ? (
++        <div>
+           <p className="mb-2">{t("link")}</p>
+-          <TextInput
+-            ref={inputRef}
+-            value={link.url || ""}
+-            onChange={(e) => setLink({ ...link, url: e.target.value })}
+-            placeholder={t("link_url_placeholder")}
+-            className="bg-base-200"
++          <textarea
++            ref={textareaRef}
++            value={batchUrls}
++            onChange={(e) => setBatchUrls(e.target.value)}
++            placeholder={t("batch_urls_placeholder")}
++            disabled={isSubmitting}
++            className="resize-y w-full h-40 rounded-md p-2 border-neutral-content bg-base-200 focus:border-primary border-solid border outline-none duration-100"
+           />
+-        </div>
+-        <div className="sm:col-span-2 col-span-5">
+-          <p className="mb-2">{t("collection")}</p>
+-          {link.collection?.name && (
+-            <CollectionSelection
+-              onChange={setCollection}
+-              defaultValue={{
+-                value: link.collection?.id,
+-                label: link.collection?.name || "Unorganized",
+-              }}
+-            />
++          {parsedBatchUrls.length > 0 && (
++            <p className="text-xs text-neutral mt-1">
++              {t("batch_urls_count", { count: parsedBatchUrls.length })}
++            </p>
+           )}
+         </div>
+-      </div>
+-      {optionsExpanded && (
+-        <div className="mt-5 grid sm:grid-cols-2 gap-3">
+-          <div>
+-            <p className="mb-2">{t("name")}</p>
++      ) : (
++        <div className="grid grid-flow-row-dense sm:grid-cols-5 gap-3">
++          <div className="sm:col-span-3 col-span-5">
++            <p className="mb-2">{t("link")}</p>
+             <TextInput
+-              value={link.name}
+-              onChange={(e) => setLink({ ...link, name: e.target.value })}
+-              placeholder={t("link_name_placeholder")}
++              ref={inputRef}
++              value={link.url || ""}
++              onChange={(e) => setLink({ ...link, url: e.target.value })}
++              placeholder={t("link_url_placeholder")}
+               className="bg-base-200"
+             />
+           </div>
++          <div className="sm:col-span-2 col-span-5">
++            <p className="mb-2">{t("collection")}</p>
++            {link.collection?.name && (
++              <CollectionSelection
++                onChange={setCollection}
++                defaultValue={{
++                  value: link.collection?.id,
++                  label: link.collection?.name || "Unorganized",
++                }}
++              />
++            )}
++          </div>
++        </div>
++      )}
++
++      {(optionsExpanded || isBatchMode) && (
++        <div className="mt-5 grid sm:grid-cols-2 gap-3">
++          {!isBatchMode && (
++            <div>
++              <p className="mb-2">{t("name")}</p>
++              <TextInput
++                value={link.name}
++                onChange={(e) => setLink({ ...link, name: e.target.value })}
++                placeholder={t("link_name_placeholder")}
++                className="bg-base-200"
++              />
++            </div>
++          )}
++          {isBatchMode && (
++            <div>
++              <p className="mb-2">{t("collection")}</p>
++              {link.collection?.name && (
++                <CollectionSelection
++                  onChange={setCollection}
++                  defaultValue={{
++                    value: link.collection?.id,
++                    label: link.collection?.name || "Unorganized",
++                  }}
++                />
++              )}
++            </div>
++          )}
+           <div>
+             <p className="mb-2">{t("tags")}</p>
+             <TagSelection
+@@ -162,18 +288,60 @@ export default function NewLinkModal({ onClose }: Props) {
+           </div>
+         </div>
+       )}
++
++      {isBatchMode && isSubmitting && (
++        <div className="mt-3">
++          <div className="flex items-center gap-2 text-sm text-neutral">
++            <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
++            <span>{t("batch_creating_links")}</span>
++          </div>
++        </div>
++      )}
++
+       <div className="flex justify-between items-center mt-5">
++        <div className="flex items-center gap-2">
++          <Button
++            variant="ghost"
++            size="sm"
++            className="flex items-center px-2 w-fit text-sm"
++            onClick={() => setOptionsExpanded(!optionsExpanded)}
++          >
++            <p>
++              {optionsExpanded || isBatchMode
++                ? t("hide_options")
++                : t("more_options")}
++            </p>
++            <i
++              className={`bi-chevron-${
++                optionsExpanded || isBatchMode ? "up" : "down"
++              }`}
++            />
++          </Button>
++          <Button
++            variant="ghost"
++            size="sm"
++            className="flex items-center px-2 w-fit text-sm"
++            onClick={() => {
++              setIsBatchMode(!isBatchMode);
++              if (!isBatchMode) {
++                setOptionsExpanded(true);
++              }
++            }}
++          >
++            <i className={`bi-${isBatchMode ? "toggle-on" : "toggle-off"}`} />
++            <p className="ml-1">{t("batch_mode")}</p>
++          </Button>
++        </div>
+         <Button
+-          variant="ghost"
+-          size="sm"
+-          className="flex items-center px-2 w-fit text-sm"
+-          onClick={() => setOptionsExpanded(!optionsExpanded)}
++          variant="accent"
++          onClick={submit}
++          disabled={isSubmitting}
+         >
+-          <p>{optionsExpanded ? t("hide_options") : t("more_options")}</p>
+-          <i className={`bi-chevron-${optionsExpanded ? "up" : "down"}`} />
+-        </Button>
+-        <Button variant="accent" onClick={submit}>
+-          {t("create_link")}
++          {isBatchMode
++            ? isSubmitting
++              ? t("batch_creating")
++              : t("batch_create_links", { count: parsedBatchUrls.length })
++            : t("create_link")}
+         </Button>
+       </div>
+     </Modal>
+diff --git a/apps/web/public/locales/de/common.json b/apps/web/public/locales/de/common.json
+index 59baca60..349fc4b1 100644
+--- a/apps/web/public/locales/de/common.json
++++ b/apps/web/public/locales/de/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Mehr Optionen",
+   "hide_options": "Optionen ausblenden",
+   "create_link": "Link erstellen",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Neue Untersammlung",
+   "for_collection": "Für {{name}}",
+   "create_new_collection": "Neue Sammlung erstellen",
+diff --git a/apps/web/public/locales/en/common.json b/apps/web/public/locales/en/common.json
+index 0d1f6adb..472f08ee 100644
+--- a/apps/web/public/locales/en/common.json
++++ b/apps/web/public/locales/en/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "More Options",
+   "hide_options": "Hide Options",
+   "create_link": "Create Link",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "New Sub-Collection",
+   "for_collection": "For {{name}}",
+   "create_new_collection": "Create a New Collection",
+diff --git a/apps/web/public/locales/es/common.json b/apps/web/public/locales/es/common.json
+index 7647beff..9af32ebc 100644
+--- a/apps/web/public/locales/es/common.json
++++ b/apps/web/public/locales/es/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Más opciones",
+   "hide_options": "Ocultar opciones",
+   "create_link": "Crear enlace",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Nueva subcolección",
+   "for_collection": "Para {{name}}",
+   "create_new_collection": "Crear una nueva colección",
+diff --git a/apps/web/public/locales/fr/common.json b/apps/web/public/locales/fr/common.json
+index 99c38f80..5e38f161 100644
+--- a/apps/web/public/locales/fr/common.json
++++ b/apps/web/public/locales/fr/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Plus d’options",
+   "hide_options": "Cacher les options",
+   "create_link": "Créer un lien",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Nouvelle sous-collection",
+   "for_collection": "Pour {{name}}",
+   "create_new_collection": "Créer une nouvelle collection",
+diff --git a/apps/web/public/locales/it/common.json b/apps/web/public/locales/it/common.json
+index b893ade5..cef84ed9 100644
+--- a/apps/web/public/locales/it/common.json
++++ b/apps/web/public/locales/it/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Più Opzioni",
+   "hide_options": "Nascondi Opzioni",
+   "create_link": "Crea Link",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Nuova Sotto-Collezione",
+   "for_collection": "Per {{name}}",
+   "create_new_collection": "Crea una Nuova Collezione",
+diff --git a/apps/web/public/locales/ja/common.json b/apps/web/public/locales/ja/common.json
+index 47686634..703a7ca5 100644
+--- a/apps/web/public/locales/ja/common.json
++++ b/apps/web/public/locales/ja/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "詳細オプション",
+   "hide_options": "オプションを隠す",
+   "create_link": "リンクを作成",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "新しいサブコレクション",
+   "for_collection": "{{name}} 用",
+   "create_new_collection": "新しいコレクションを作成",
+diff --git a/apps/web/public/locales/nl/common.json b/apps/web/public/locales/nl/common.json
+index ddb3c78b..30da82a2 100644
+--- a/apps/web/public/locales/nl/common.json
++++ b/apps/web/public/locales/nl/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Meer Opties",
+   "hide_options": "Opties Verbergen",
+   "create_link": "Link Aanmaken",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Nieuwe Sub-Collectie",
+   "for_collection": "Voor {{name}}",
+   "create_new_collection": "Nieuwe Collectie Aanmaken",
+diff --git a/apps/web/public/locales/pl/common.json b/apps/web/public/locales/pl/common.json
+index 369236da..31421d9d 100644
+--- a/apps/web/public/locales/pl/common.json
++++ b/apps/web/public/locales/pl/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Więcej opcji",
+   "hide_options": "Ukryj opcje",
+   "create_link": "Utwórz link",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Nowa podkolekcja",
+   "for_collection": "Dla {{name}}",
+   "create_new_collection": "Utwórz nową kolekcję",
+diff --git a/apps/web/public/locales/pt-BR/common.json b/apps/web/public/locales/pt-BR/common.json
+index 9de68711..e687c42d 100644
+--- a/apps/web/public/locales/pt-BR/common.json
++++ b/apps/web/public/locales/pt-BR/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Mais Opções",
+   "hide_options": "Ocultar Opções",
+   "create_link": "Criar Link",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Nova Subcoleção",
+   "for_collection": "Para {{name}}",
+   "create_new_collection": "Criar uma Nova Coleção",
+diff --git a/apps/web/public/locales/ro/common.json b/apps/web/public/locales/ro/common.json
+index 242c6de5..9fc692ff 100644
+--- a/apps/web/public/locales/ro/common.json
++++ b/apps/web/public/locales/ro/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Mai multe opțiuni",
+   "hide_options": "Ascunde opțiuni",
+   "create_link": "Creeați Link",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Sub-Colecție nouă",
+   "for_collection": "Pentru {{name}}",
+   "create_new_collection": "Creează o Colecție nouă",
+diff --git a/apps/web/public/locales/ru/common.json b/apps/web/public/locales/ru/common.json
+index dd7a29c5..7530eed4 100644
+--- a/apps/web/public/locales/ru/common.json
++++ b/apps/web/public/locales/ru/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Ещё опции",
+   "hide_options": "Скрыть опции",
+   "create_link": "Создать ссылку",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Новая подколлекция",
+   "for_collection": "Для {{name}}",
+   "create_new_collection": "Создать коллекцию",
+diff --git a/apps/web/public/locales/tr/common.json b/apps/web/public/locales/tr/common.json
+index ee45c843..9bd3f58a 100644
+--- a/apps/web/public/locales/tr/common.json
++++ b/apps/web/public/locales/tr/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Daha Fazla Seçenek",
+   "hide_options": "Seçenekleri Gizle",
+   "create_link": "Bağlantı Oluştur",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Yeni Alt Koleksiyon",
+   "for_collection": "{{name}} için",
+   "create_new_collection": "Yeni Koleksiyon Oluştur",
+diff --git a/apps/web/public/locales/uk/common.json b/apps/web/public/locales/uk/common.json
+index e6360290..1fbd1b27 100644
+--- a/apps/web/public/locales/uk/common.json
++++ b/apps/web/public/locales/uk/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "Більш параметрів",
+   "hide_options": "Сховати параметри",
+   "create_link": "Створити посилання",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "Нова підколекція",
+   "for_collection": "Для {{name}}",
+   "create_new_collection": "Створити нову колекцію",
+diff --git a/apps/web/public/locales/zh-TW/common.json b/apps/web/public/locales/zh-TW/common.json
+index 2a312265..18f5b525 100644
+--- a/apps/web/public/locales/zh-TW/common.json
++++ b/apps/web/public/locales/zh-TW/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "更多選項",
+   "hide_options": "隱藏選項",
+   "create_link": "建立連結",
++  "batch_urls_placeholder": "Paste multiple URLs, one per line...",
++  "batch_urls_count": "{{count}} URL(s) detected",
++  "batch_mode": "Batch Mode",
++  "batch_create_links": "Create {{count}} Links",
++  "batch_creating": "Creating...",
++  "batch_creating_links": "Creating links...",
++  "batch_create_success": "Successfully created {{count}} link(s)!",
++  "batch_create_partial_failure": "{{success}} created successfully, {{failed}} failed. Failed URLs have been kept in the input.",
+   "new_sub_collection": "新增子收藏集",
+   "for_collection": "針對 {{name}}",
+   "create_new_collection": "建立新收藏集",
+diff --git a/apps/web/public/locales/zh/common.json b/apps/web/public/locales/zh/common.json
+index 0a8d9807..5d426475 100644
+--- a/apps/web/public/locales/zh/common.json
++++ b/apps/web/public/locales/zh/common.json
+@@ -296,6 +296,14 @@
+   "more_options": "更多选项",
+   "hide_options": "隐藏选项",
+   "create_link": "创建链接",
++  "batch_urls_placeholder": "粘贴多个 URL，每行一个...",
++  "batch_urls_count": "已识别 {{count}} 个 URL",
++  "batch_mode": "批量模式",
++  "batch_create_links": "创建 {{count}} 个链接",
++  "batch_creating": "创建中...",
++  "batch_creating_links": "正在创建链接...",
++  "batch_create_success": "成功创建了 {{count}} 个链接！",
++  "batch_create_partial_failure": "成功 {{success}} 个，失败 {{failed}} 个。失败的 URL 已保留在输入框中。",
+   "new_sub_collection": "新子收藏夹",
+   "for_collection": "对于 {{name}}",
+   "create_new_collection": "创建新收藏夹",
