@@ -1,5 +1,5 @@
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { styles } from "./styles";
 import { Option } from "@linkwarden/types/inputSelect";
 import CreatableSelect from "react-select/creatable";
@@ -16,20 +16,29 @@ type Props = {
         value?: number;
       }
     | undefined;
+  value?:
+    | {
+        label: string;
+        value?: number;
+      }
+    | undefined;
   creatable?: boolean;
   autoFocus?: boolean;
   onBlur?: any;
   className?: string;
+  disabled?: boolean;
 };
 
 export default function CollectionSelection({
   onChange,
   defaultValue,
+  value,
   showDefaultValue = true,
   creatable = true,
   autoFocus,
   onBlur,
   className,
+  disabled,
 }: Props) {
   const { data: collections = [] } = useCollections();
 
@@ -39,20 +48,27 @@ export default function CollectionSelection({
 
   const collectionId = Number(router.query.id);
 
-  const activeCollection = collections.find((e) => {
+  const activeCollection = collections.find((e: any) => {
     return e.id === collectionId;
   });
 
-  if (activeCollection && !defaultValue) {
-    defaultValue = {
-      value: activeCollection?.id,
-      label: activeCollection?.name,
-    };
-  }
+  const resolvedDefaultValue = useMemo(() => {
+    if (value) return value;
+    if (defaultValue) return defaultValue;
+
+    if (activeCollection) {
+      return {
+        value: activeCollection.id,
+        label: activeCollection.name,
+      };
+    }
+
+    return undefined;
+  }, [activeCollection, defaultValue, value]);
 
   const getParentNames = (parentId: number): string[] => {
     const parentNames = [];
-    const parent = collections.find((e) => e.id === parentId);
+    const parent = collections.find((e: any) => e.id === parentId);
 
     if (parent) {
       parentNames.push(parent.name);
@@ -61,13 +77,12 @@ export default function CollectionSelection({
       }
     }
 
-    // Have the top level parent at beginning
     return parentNames.reverse();
   };
 
   useEffect(() => {
     const formattedCollections = collections
-      .map((e) => {
+      .map((e: any) => {
         return {
           value: e.id,
           label: e.name,
@@ -79,7 +94,7 @@ export default function CollectionSelection({
           parentId: e.parentId,
         };
       })
-      .sort((a, b) => {
+      .sort((a: any, b: any) => {
         return a.parentsLabel.localeCompare(b.parentsLabel);
       });
 
@@ -107,6 +122,7 @@ export default function CollectionSelection({
     return (
       <CreatableSelect
         isClearable={false}
+        isDisabled={disabled}
         className={clsx("react-select-container", className)}
         classNamePrefix="react-select"
         onChange={onChange}
@@ -114,30 +130,31 @@ export default function CollectionSelection({
         styles={styles}
         autoFocus={autoFocus}
         onBlur={onBlur}
-        defaultValue={showDefaultValue ? defaultValue : null}
+        defaultValue={showDefaultValue ? resolvedDefaultValue : null}
+        value={showDefaultValue ? value : null}
         components={{
           Option: customOption,
         }}
-        // menuPosition="fixed"
-      />
-    );
-  } else {
-    return (
-      <Select
-        isClearable={false}
-        className={clsx("react-select-container", className)}
-        classNamePrefix="react-select"
-        onChange={onChange}
-        options={options}
-        styles={styles}
-        autoFocus={autoFocus}
-        defaultValue={showDefaultValue ? defaultValue : null}
-        onBlur={onBlur}
-        components={{
-          Option: customOption,
-        }}
-        // menuPosition="fixed"
       />
     );
   }
+
+  return (
+    <Select
+      isClearable={false}
+      isDisabled={disabled}
+      className={clsx("react-select-container", className)}
+      classNamePrefix="react-select"
+      onChange={onChange}
+      options={options}
+      styles={styles}
+      autoFocus={autoFocus}
+      defaultValue={showDefaultValue ? resolvedDefaultValue : null}
+      value={showDefaultValue ? value : null}
+      onBlur={onBlur}
+      components={{
+        Option: customOption,
+      }}
+    />
+  );
 }

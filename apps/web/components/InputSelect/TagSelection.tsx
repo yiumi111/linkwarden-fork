@@ -7,16 +7,20 @@ import { useTags } from "@linkwarden/router/tags";
 import { useTranslation } from "next-i18next";
 import { TagSort } from "@linkwarden/types/global";
 
+type TagValue = {
+  value?: number;
+  label: string;
+};
+
 type Props = {
   onChange: (e: any) => void;
   options?: Option[] | ArchivalTagOption[];
   isArchivalSelection?: boolean;
-  defaultValue?: {
-    value?: number;
-    label: string;
-  }[];
+  defaultValue?: TagValue[];
+  value?: TagValue[];
   autoFocus?: boolean;
   onBlur?: any;
+  disabled?: boolean;
 };
 
 export default function TagSelection({
@@ -24,8 +28,10 @@ export default function TagSelection({
   options,
   isArchivalSelection,
   defaultValue,
+  value,
   autoFocus,
   onBlur,
+  disabled,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState("");
   const {
@@ -52,12 +58,13 @@ export default function TagSelection({
   return (
     <CreatableSelect
       isClearable={false}
+      isDisabled={disabled}
       className="react-select-container text-sm"
       classNamePrefix="react-select"
       onChange={onChange}
       options={isArchivalSelection ? options : tagOptions}
       styles={styles}
-      value={isArchivalSelection ? [] : undefined}
+      value={isArchivalSelection ? [] : value}
       defaultValue={isArchivalSelection ? undefined : defaultValue}
       placeholder={t("tag_selection_placeholder")}
       isMulti
