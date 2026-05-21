@@ -184,8 +184,16 @@ function parseIPv6(address: string) {
 function extractIPv4FromMappedIPv6(address: string) {
   const normalized = address.toLowerCase();
 
+  // Check for standard IPv4-mapped IPv6 format like ::ffff:192.168.1.1
+  const ipv4MappedPattern = /^::(?:ffff:)?((?:\d{1,3}\.){3}\d{1,3})$/i;
+  const match = normalized.match(ipv4MappedPattern);
+  
+  if (match && match[1]) {
+    return parseIPv4(match[1]) === null ? null : match[1];
+  }
+  
+  // Fallback to original logic for other formats
   if (!normalized.includes(".")) return null;
-
   const ipv4Candidate = normalized.slice(normalized.lastIndexOf(":") + 1);
   return parseIPv4(ipv4Candidate) === null ? null : ipv4Candidate;
 }
@@ -312,7 +320,9 @@ export async function assertUrlIsSafeForServerSideFetch(
 ) {
   const url = new URL(value);
 
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
+  // Ensure protocol is strictly http/https (case-insensitive check for extra safety)
+  const protocol = url.protocol.toLowerCase();
+  if (protocol !== "http:" && protocol !== "https:") {
     throw new UnsafeUrlError("Only http:// and https:// URLs can be archived.");
   }
 
