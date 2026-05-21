@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { useDroppable } from "@dnd-kit/core";
+import { DroppableData } from "@linkwarden/types/global";
 
 const Droppable = ({
   children,
@@ -9,18 +10,7 @@ const Droppable = ({
 }: {
   children: React.ReactNode;
   id: string;
-  data?: {
-    /**
-     * Id of collection or tag to drop into.
-     */
-    id?: string;
-    /**
-     * Name of collection or tag to drop into.
-     */
-    name?: string;
-    ownerId?: string;
-    type?: "collection" | "tag";
-  };
+  data?: DroppableData;
   className?: string;
 }) => {
   const { setNodeRef, isOver } = useDroppable({

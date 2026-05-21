@@ -1,0 +1,484 @@
+diff --git a/apps/web/components/CollectionListing.tsx b/apps/web/components/CollectionListing.tsx
+index cd7488e4..7e2ce1ab 100644
+--- a/apps/web/components/CollectionListing.tsx
++++ b/apps/web/components/CollectionListing.tsx
+@@ -1,17 +1,14 @@
+-import React, { useEffect, useMemo, useState } from "react";
++import React, { useEffect, useMemo, useRef, useState } from "react";
+ import Tree, {
+   mutateTree,
+   moveItemOnTree,
+   RenderItemParams,
+-  TreeItem,
+   TreeData,
+   ItemId,
+   TreeSourcePosition,
+   TreeDestinationPosition,
+ } from "@atlaskit/tree";
+-import { Collection } from "@linkwarden/prisma/client";
+ import Link from "next/link";
+-import { CollectionIncludingMembersAndLinkCount } from "@linkwarden/types/global";
+ import { useRouter } from "next/router";
+ import toast from "react-hot-toast";
+ import { useTranslation } from "next-i18next";
+@@ -25,10 +22,12 @@ import { IconWeight } from "@phosphor-icons/react";
+ import Droppable from "./Droppable";
+ import { cn } from "@linkwarden/lib/utils";
+ import { Active, useDndContext } from "@dnd-kit/core";
+-
+-interface ExtendedTreeItem extends TreeItem {
+-  data: Collection;
+-}
++import {
++  buildCollectionTree,
++  CollectionTreeItem,
++  flattenCollectionTreeIds,
++  reorderCollectionTree,
++} from "@/lib/collectionTree";
+ 
+ const CollectionListing = () => {
+   const { active: droppableActive } = useDndContext();
+@@ -42,17 +41,29 @@ const CollectionListing = () => {
+   const router = useRouter();
+ 
+   const [tree, setTree] = useState<TreeData | undefined>();
++  const treeRef = useRef<TreeData | undefined>(undefined);
++
++  useEffect(() => {
++    treeRef.current = tree;
++  }, [tree]);
++
++  const activeCollectionId = useMemo(
++    () => Number(router.asPath.split("/collections/")[1]),
++    [router.asPath]
++  );
+ 
+   const initialTree = useMemo(() => {
+-    if (collections.length > 0) {
+-      return buildTreeFromCollections(
+-        collections,
+-        router,
+-        tree,
+-        user?.collectionOrder
+-      );
+-    } else return undefined;
+-  }, [collections, user]);
++    if (collections.length === 0) {
++      return undefined;
++    }
++
++    return buildCollectionTree({
++      collections,
++      activeCollectionId,
++      previousTree: treeRef.current,
++      order: user?.collectionOrder,
++    });
++  }, [activeCollectionId, collections, user?.collectionOrder]);
+ 
+   useEffect(() => {
+     setTree(initialTree);
+@@ -60,7 +71,6 @@ const CollectionListing = () => {
+ 
+   useEffect(() => {
+     if (user?.username) {
+-      // refetch();
+       if (
+         (!user.collectionOrder || user.collectionOrder.length === 0) &&
+         collections.length > 0
+@@ -74,13 +84,11 @@ const CollectionListing = () => {
+       else {
+         const newCollectionOrder: number[] = [...(user.collectionOrder || [])];
+ 
+-        // Start with collections that are in both account.collectionOrder and collections
+         const existingCollectionIds = collections.map((c) => c.id as number);
+         const filteredCollectionOrder = user.collectionOrder.filter((id: any) =>
+           existingCollectionIds.includes(id)
+         );
+ 
+-        // Add new collections that are not in account.collectionOrder and meet the specific conditions
+         collections.forEach((collection) => {
+           if (
+             !filteredCollectionOrder.includes(collection.id as number) &&
+@@ -90,7 +98,6 @@ const CollectionListing = () => {
+           }
+         });
+ 
+-        // check if the newCollectionOrder is the same as the old one
+         if (
+           JSON.stringify(newCollectionOrder) !==
+           JSON.stringify(user.collectionOrder)
+@@ -118,81 +125,6 @@ const CollectionListing = () => {
+     );
+   };
+ 
+-  function reorderTreeItems(
+-    tree: TreeData,
+-    movedCollectionId: ItemId,
+-    source: TreeSourcePosition,
+-    destination: TreeDestinationPosition
+-  ) {
+-    // Same parent reordering
+-    if (source.parentId === destination.parentId) {
+-      const parent = tree.items[source.parentId];
+-      const children = [...parent.children];
+-
+-      // Remove from source index
+-      children.splice(source.index, 1);
+-      // Insert at destination index
+-      if (destination.index !== undefined) {
+-        children.splice(destination.index, 0, movedCollectionId);
+-      }
+-
+-      parent.children = children;
+-      return tree;
+-    }
+-
+-    // Different parent move
+-    const sourceParent = tree.items[source.parentId];
+-    const destinationParent = tree.items[destination.parentId];
+-
+-    // Remove from source parent
+-    sourceParent.children = sourceParent.children.filter(
+-      (id) => id !== movedCollectionId
+-    );
+-
+-    // Initialize children array if it doesn't exist
+-    if (!destinationParent.children) {
+-      destinationParent.children = [];
+-    }
+-
+-    // If destination index is not specified, add to the end
+-    const destinationIndex =
+-      destination.index !== undefined
+-        ? destination.index
+-        : destinationParent.children.length;
+-
+-    // Add to destination parent
+-    destinationParent.children.splice(destinationIndex, 0, movedCollectionId);
+-
+-    // Update destination parent properties
+-    destinationParent.hasChildren = true;
+-    destinationParent.isExpanded = true;
+-
+-    // Update the moved item's parent ID
+-    tree.items[movedCollectionId].data.parentId = destination.parentId;
+-
+-    return tree;
+-  }
+-
+-  function flattenTreeIds(
+-    tree: TreeData,
+-    nodeId: ItemId = "root",
+-    result: Array<ItemId> = []
+-  ) {
+-    const node = tree.items[nodeId];
+-
+-    if (nodeId !== "root") {
+-      result.push(node.id);
+-    }
+-
+-    if (node.children && node.children.length > 0) {
+-      node.children.forEach((childId) => {
+-        flattenTreeIds(tree, childId, result);
+-      });
+-    }
+-
+-    return result;
+-  }
+-
+   const onDragEnd = async (
+     source: TreeSourcePosition,
+     destination: TreeDestinationPosition | undefined
+@@ -229,7 +161,7 @@ const CollectionListing = () => {
+ 
+     setTree((currentTree) => moveItemOnTree(currentTree!, source, destination));
+ 
+-    const newTree = reorderTreeItems(
++    const newTree = reorderCollectionTree(
+       tree,
+       movedCollectionId,
+       source,
+@@ -257,7 +189,7 @@ const CollectionListing = () => {
+ 
+     await updateUser.mutateAsync({
+       ...user,
+-      collectionOrder: flattenTreeIds(newTree),
++      collectionOrder: flattenCollectionTreeIds(newTree),
+     });
+   };
+ 
+@@ -269,26 +201,29 @@ const CollectionListing = () => {
+         <div className="skeleton h-4 w-full"></div>
+       </div>
+     );
+-  } else if (!tree) {
++  }
++
++  if (!tree) {
+     return (
+       <p className="text-neutral text-xs font-semibold truncate w-full px-2 mt-5 mb-8">
+         {t("you_have_no_collections")}
+       </p>
+     );
+-  } else
+-    return (
+-      <Tree
+-        tree={tree}
+-        renderItem={(itemProps) =>
+-          renderItem({ ...itemProps }, router.asPath, droppableActive)
+-        }
+-        onExpand={onExpand}
+-        onCollapse={onCollapse}
+-        onDragEnd={onDragEnd}
+-        isDragEnabled
+-        isNestingEnabled
+-      />
+-    );
++  }
++
++  return (
++    <Tree
++      tree={tree}
++      renderItem={(itemProps) =>
++        renderItem({ ...itemProps }, router.asPath, droppableActive)
++      }
++      onExpand={onExpand}
++      onCollapse={onCollapse}
++      onDragEnd={onDragEnd}
++      isDragEnabled
++      isNestingEnabled
++    />
++  );
+ };
+ 
+ export default CollectionListing;
+@@ -325,7 +260,7 @@ const renderItem = (
+             "duration-100 flex gap-1 items-center pr-2 pl-1 rounded-md"
+           )}
+         >
+-          {Dropdown(item as ExtendedTreeItem, onExpand, onCollapse)}
++          {Dropdown(item as CollectionTreeItem, onExpand, onCollapse)}
+ 
+           <Link
+             href={`/collections/${collection.id}`}
+@@ -370,7 +305,7 @@ const renderItem = (
+ };
+ 
+ const Dropdown = (
+-  item: ExtendedTreeItem,
++  item: CollectionTreeItem,
+   onExpand: (id: ItemId) => void,
+   onCollapse: (id: ItemId) => void
+ ) => {
+@@ -385,113 +320,6 @@ const Dropdown = (
+       </button>
+     );
+   }
+-  // return <span>&bull;</span>;
+-  return <div></div>;
+-};
+-
+-const buildTreeFromCollections = (
+-  collections: CollectionIncludingMembersAndLinkCount[],
+-  router: ReturnType<typeof useRouter>,
+-  tree?: TreeData,
+-  order?: number[]
+-): TreeData => {
+-  if (order) {
+-    collections.sort((a: any, b: any) => {
+-      return order.indexOf(a.id) - order.indexOf(b.id);
+-    });
+-  }
+-
+-  function getTotalLinkCount(collectionId: number): number {
+-    const collection = items[collectionId];
+-    if (!collection) {
+-      return 0;
+-    }
+-
+-    let totalLinkCount = (collection.data as any)._count?.links || 0;
+-
+-    if (collection.hasChildren) {
+-      collection.children.forEach((childId) => {
+-        totalLinkCount += getTotalLinkCount(childId as number);
+-      });
+-    }
+-
+-    return totalLinkCount;
+-  }
+-
+-  const items: { [key: string]: ExtendedTreeItem } = collections.reduce(
+-    (acc: any, collection) => {
+-      acc[collection.id as number] = {
+-        id: collection.id,
+-        children: [],
+-        hasChildren: false,
+-        isExpanded: tree?.items[collection.id as number]?.isExpanded || false,
+-        data: {
+-          id: collection.id,
+-          parentId: collection.parentId,
+-          name: collection.name,
+-          description: collection.description,
+-          color: collection.color,
+-          icon: collection.icon,
+-          iconWeight: collection.iconWeight,
+-          isPublic: collection.isPublic,
+-          ownerId: collection.ownerId,
+-          createdAt: collection.createdAt,
+-          updatedAt: collection.updatedAt,
+-          _count: {
+-            links: collection._count?.links,
+-          },
+-        },
+-      };
+-      return acc;
+-    },
+-    {}
+-  );
+-
+-  const activeCollectionId = Number(router.asPath.split("/collections/")[1]);
+-
+-  if (activeCollectionId) {
+-    for (const item in items) {
+-      const collection = items[item];
+-      if (Number(item) === activeCollectionId && collection.data.parentId) {
+-        // get all the parents of the active collection recursively until root and set isExpanded to true
+-        let parentId = collection.data.parentId || null;
+-        while (parentId && items[parentId]) {
+-          items[parentId].isExpanded = true;
+-          parentId = items[parentId].data.parentId;
+-        }
+-      }
+-    }
+-  }
+ 
+-  collections.forEach((collection) => {
+-    const parentId = collection.parentId;
+-    if (parentId && items[parentId] && collection.id) {
+-      items[parentId].children.push(collection.id);
+-      items[parentId].hasChildren = true;
+-    }
+-  });
+-
+-  collections.forEach((collection) => {
+-    const collectionId = collection.id;
+-    if (items[collectionId as number] && collection.id) {
+-      const linkCount = getTotalLinkCount(collectionId as number);
+-      (items[collectionId as number].data as any)._count.links = linkCount;
+-    }
+-  });
+-
+-  const rootId = "root";
+-  items[rootId] = {
+-    id: rootId,
+-    children: (collections
+-      .filter(
+-        (c) =>
+-          c.parentId === null || !collections.find((i) => i.id === c.parentId)
+-      )
+-      .map((c) => c.id) || "") as unknown as string[],
+-    hasChildren: true,
+-    isExpanded: true,
+-    data: { name: "Root" } as Collection,
+-  };
+-
+-  return { rootId, items };
++  return <div></div>;
+ };
+diff --git a/apps/web/components/DragNDrop.tsx b/apps/web/components/DragNDrop.tsx
+index 52759923..4fd6a2c0 100644
+--- a/apps/web/components/DragNDrop.tsx
++++ b/apps/web/components/DragNDrop.tsx
+@@ -11,7 +11,10 @@ import {
+   useSensors,
+ } from "@dnd-kit/core";
+ import LinkIcon from "./LinkViews/LinkComponents/LinkIcon";
+-import { LinkIncludingShortenedCollectionAndTags } from "@linkwarden/types/global";
++import {
++  DroppableData,
++  LinkIncludingShortenedCollectionAndTags,
++} from "@linkwarden/types/global";
+ import toast from "react-hot-toast";
+ import { useUpdateLink } from "@linkwarden/router/links";
+ import { useTranslation } from "react-i18next";
+@@ -93,7 +96,7 @@ export default function DragNDrop({
+     const { over, active } = event;
+     if (!over || !activeLink) return;
+ 
+-    const overData = over.data.current;
++    const overData = over.data.current as DroppableData | undefined;
+     const targetId = String(over.id);
+ 
+     const isFromRecentSection = active.data.current?.dashboardType === "recent";
+@@ -170,9 +173,19 @@ export default function DragNDrop({
+     }
+ 
+     // DROP ON COLLECTION (dashboard + sidebar)
+-    const collectionId = overData?.id as number | undefined;
+-    const collectionName = overData?.name as string | undefined;
+-    const ownerId = overData?.ownerId as number | undefined;
++    const collectionId =
++      typeof overData?.id === "number"
++        ? overData.id
++        : overData?.id
++          ? Number(overData.id)
++          : undefined;
++    const collectionName = overData?.name;
++    const ownerId =
++      typeof overData?.ownerId === "number"
++        ? overData.ownerId
++        : overData?.ownerId
++          ? Number(overData.ownerId)
++          : undefined;
+ 
+     if (!collectionId || !collectionName || typeof ownerId === "undefined")
+       return;
+diff --git a/apps/web/components/Droppable.tsx b/apps/web/components/Droppable.tsx
+index b1520e52..aaf5c6ea 100644
+--- a/apps/web/components/Droppable.tsx
++++ b/apps/web/components/Droppable.tsx
+@@ -1,5 +1,6 @@
+ import { cn } from "@/lib/utils";
+ import { useDroppable } from "@dnd-kit/core";
++import { DroppableData } from "@linkwarden/types/global";
+ 
+ const Droppable = ({
+   children,
+@@ -9,18 +10,7 @@ const Droppable = ({
+ }: {
+   children: React.ReactNode;
+   id: string;
+-  data?: {
+-    /**
+-     * Id of collection or tag to drop into.
+-     */
+-    id?: string;
+-    /**
+-     * Name of collection or tag to drop into.
+-     */
+-    name?: string;
+-    ownerId?: string;
+-    type?: "collection" | "tag";
+-  };
++  data?: DroppableData;
+   className?: string;
+ }) => {
+   const { setNodeRef, isOver } = useDroppable({
+diff --git a/packages/types/global.ts b/packages/types/global.ts
+index 59136e44..1b07cf33 100644
+--- a/packages/types/global.ts
++++ b/packages/types/global.ts
+@@ -11,6 +11,13 @@ import Stripe from "stripe";
+ type OptionalExcluding<T, TRequired extends keyof T> = Partial<T> &
+   Pick<T, TRequired>;
+ 
++export interface DroppableData {
++  id?: string | number;
++  name?: string;
++  ownerId?: string | number;
++  type?: "collection" | "tag";
++}
++
+ export interface LinkIncludingShortenedCollectionAndTags
+   extends Omit<
+     Link,

@@ -11,7 +11,10 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import LinkIcon from "./LinkViews/LinkComponents/LinkIcon";
-import { LinkIncludingShortenedCollectionAndTags } from "@linkwarden/types/global";
+import {
+  DroppableData,
+  LinkIncludingShortenedCollectionAndTags,
+} from "@linkwarden/types/global";
 import toast from "react-hot-toast";
 import { useUpdateLink } from "@linkwarden/router/links";
 import { useTranslation } from "react-i18next";
@@ -93,7 +96,7 @@ export default function DragNDrop({
     const { over, active } = event;
     if (!over || !activeLink) return;
 
-    const overData = over.data.current;
+    const overData = over.data.current as DroppableData | undefined;
     const targetId = String(over.id);
 
     const isFromRecentSection = active.data.current?.dashboardType === "recent";
@@ -170,9 +173,19 @@ export default function DragNDrop({
     }
 
     // DROP ON COLLECTION (dashboard + sidebar)
-    const collectionId = overData?.id as number | undefined;
-    const collectionName = overData?.name as string | undefined;
-    const ownerId = overData?.ownerId as number | undefined;
+    const collectionId =
+      typeof overData?.id === "number"
+        ? overData.id
+        : overData?.id
+          ? Number(overData.id)
+          : undefined;
+    const collectionName = overData?.name;
+    const ownerId =
+      typeof overData?.ownerId === "number"
+        ? overData.ownerId
+        : overData?.ownerId
+          ? Number(overData.ownerId)
+          : undefined;
 
     if (!collectionId || !collectionName || typeof ownerId === "undefined")
       return;

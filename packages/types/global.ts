@@ -11,6 +11,13 @@ import Stripe from "stripe";
 type OptionalExcluding<T, TRequired extends keyof T> = Partial<T> &
   Pick<T, TRequired>;
 
+export interface DroppableData {
+  id?: string | number;
+  name?: string;
+  ownerId?: string | number;
+  type?: "collection" | "tag";
+}
+
 export interface LinkIncludingShortenedCollectionAndTags
   extends Omit<
     Link,
