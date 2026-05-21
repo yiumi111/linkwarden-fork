@@ -91,8 +91,20 @@ function ipv4Mask(prefixLength: number) {
   return Math.floor(2 ** 32 - 2 ** (32 - prefixLength));
 }
 
+function unwrapIpv6HostnameLiteral(value: string) {
+  return value.startsWith("[") && value.endsWith("]")
+    ? value.slice(1, -1)
+    : value;
+}
+
 function normalizeHostname(hostname: string) {
-  return hostname.trim().toLowerCase().replace(/\.+$/, "");
+  return unwrapIpv6HostnameLiteral(
+    hostname.trim().toLowerCase().replace(/\.+$/, "")
+  );
+}
+
+function normalizeIpAddress(address: string) {
+  return unwrapIpv6HostnameLiteral(address.trim().toLowerCase().split("%")[0]);
 }
 
 function parseIPv4(address: string) {
@@ -127,7 +139,7 @@ function ipv4TailToHexSegments(address: string) {
 }
 
 function parseIPv6(address: string) {
-  const normalized = address.toLowerCase().split("%")[0];
+  const normalized = normalizeIpAddress(address);
 
   if (!normalized) return null;
 
@@ -182,12 +194,21 @@ function parseIPv6(address: string) {
 }
 
 function extractIPv4FromMappedIPv6(address: string) {
-  const normalized = address.toLowerCase();
+  const ipv6 = parseIPv6(address);
 
-  if (!normalized.includes(".")) return null;
+  if (ipv6 === null) return null;
 
-  const ipv4Candidate = normalized.slice(normalized.lastIndexOf(":") + 1);
-  return parseIPv4(ipv4Candidate) === null ? null : ipv4Candidate;
+  const isMappedIpv6 =
+    ipv6.slice(0, 5).every((segment) => segment === 0) && ipv6[5] === 0xffff;
+
+  if (!isMappedIpv6) return null;
+
+  return [
+    ipv6[6] >> 8,
+    ipv6[6] & 0xff,
+    ipv6[7] >> 8,
+    ipv6[7] & 0xff,
+  ].join(".");
 }
 
 export function isHostnameBlockedForServerSideFetch(hostname: string) {
@@ -202,9 +223,10 @@ export function isHostnameBlockedForServerSideFetch(hostname: string) {
 }
 
 export function isIpAddressBlockedForServerSideFetch(address: string) {
+  const normalized = normalizeIpAddress(address);
   const ipv4 =
-    parseIPv4(address) ?? (() => {
-      const mapped = extractIPv4FromMappedIPv6(address);
+    parseIPv4(normalized) ?? (() => {
+      const mapped = extractIPv4FromMappedIPv6(normalized);
       return mapped ? parseIPv4(mapped) : null;
     })();
 
@@ -214,7 +236,7 @@ export function isIpAddressBlockedForServerSideFetch(address: string) {
     );
   }
 
-  const ipv6 = parseIPv6(address);
+  const ipv6 = parseIPv6(normalized);
   if (ipv6 === null) return true;
 
   return IPV6_BLOCKED_RANGES.some(({ network, prefix }) =>
@@ -247,10 +269,10 @@ export const defaultHostnameLookup: HostnameLookup = async (hostname) => {
 
   return resolved
     .filter(
-      (entry): entry is { address: string; family: 4 | 6 } =>
+      (entry: any): entry is { address: string; family: 4 | 6 } =>
         entry.family === 4 || entry.family === 6
     )
-    .map((entry) => ({
+    .map((entry: { address: string; family: 4 | 6 }) => ({
       address: entry.address,
       family: entry.family,
     }));
@@ -288,11 +310,16 @@ export async function resolveHostnameForServerSideFetch(
     );
   }
 
-  if (!addresses.length) {
+  const normalizedAddresses = addresses.map((entry: ResolvedAddress) => ({
+    address: normalizeIpAddress(entry.address),
+    family: entry.family,
+  }));
+
+  if (!normalizedAddresses.length) {
     throw new UnsafeUrlError("URL hostname did not resolve to a public IP.");
   }
 
-  const blockedAddress = addresses.find((entry) =>
+  const blockedAddress = normalizedAddresses.find((entry: ResolvedAddress) =>
     isIpAddressBlockedForServerSideFetch(entry.address)
   );
 
@@ -300,7 +327,7 @@ export async function resolveHostnameForServerSideFetch(
     throw new UnsafeUrlError("URL resolves to a blocked internal IP address.");
   }
 
-  return addresses;
+  return normalizedAddresses;
 }
 
 export async function assertUrlIsSafeForServerSideFetch(
