@@ -198,7 +198,38 @@ export function isHostnameBlockedForServerSideFetch(hostname: string) {
   if (BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => normalized.endsWith(suffix)))
     return true;
 
-  return !normalized.includes(".") && isIP(normalized) === 0;
+  return !normalized.includes(".") && !normalized.includes(":") && isIP(normalized) === 0;
+}
+
+function extractIPv4FromParsedIPv6(segments: number[]) {
+  const isMapped =
+    segments[0] === 0 &&
+    segments[1] === 0 &&
+    segments[2] === 0 &&
+    segments[3] === 0 &&
+    segments[4] === 0 &&
+    segments[5] === 0xffff;
+
+  const isCompatible =
+    segments[0] === 0 &&
+    segments[1] === 0 &&
+    segments[2] === 0 &&
+    segments[3] === 0 &&
+    segments[4] === 0 &&
+    segments[5] === 0;
+
+  if (!isMapped && !isCompatible) return null;
+
+  return (segments[6] * 65536 + segments[7]) >>> 0;
+}
+
+function isEmbeddedIPv4Blocked(segments: number[]) {
+  const ipv4 = extractIPv4FromParsedIPv6(segments);
+  if (ipv4 === null) return false;
+
+  return IPV4_BLOCKED_RANGES.some(
+    ({ network, mask }) => (ipv4 & mask) === (network & mask)
+  );
 }
 
 export function isIpAddressBlockedForServerSideFetch(address: string) {
@@ -216,6 +247,8 @@ export function isIpAddressBlockedForServerSideFetch(address: string) {
 
   const ipv6 = parseIPv6(address);
   if (ipv6 === null) return true;
+
+  if (isEmbeddedIPv4Blocked(ipv6)) return true;
 
   return IPV6_BLOCKED_RANGES.some(({ network, prefix }) =>
     ipv6MatchesPrefix(ipv6, network, prefix)
@@ -274,6 +307,20 @@ export async function resolveHostnameForServerSideFetch(
     }
 
     return [{ address: normalized, family: ipFamily }] as const;
+  }
+
+  if (normalized.includes(":")) {
+    const bracketed = normalized.startsWith("[") && normalized.endsWith("]");
+    const ipv6Candidate = bracketed ? normalized.slice(1, -1) : normalized;
+    const parsed = parseIPv6(ipv6Candidate);
+
+    if (parsed !== null) {
+      if (isIpAddressBlockedForServerSideFetch(ipv6Candidate)) {
+        throw new UnsafeUrlError("URL resolves to a blocked internal IP address.");
+      }
+
+      return [{ address: ipv6Candidate, family: 6 }] as const;
+    }
   }
 
   let addresses: ReadonlyArray<ResolvedAddress>;
