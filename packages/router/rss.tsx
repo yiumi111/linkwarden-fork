@@ -66,4 +66,36 @@ const useDeleteRssSubscription = () => {
   });
 };
 
-export { useRssSubscriptions, useAddRssSubscription, useDeleteRssSubscription };
+const useUpdateRssSubscription = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...body
+    }: { id: number } & Partial<RssSubscription>) => {
+      const response = await fetch(`/api/v1/rss/${id}`, {
+        body: JSON.stringify(body),
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.response);
+
+      return data.response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rss-subscriptions"] });
+    },
+  });
+};
+
+export {
+  useRssSubscriptions,
+  useAddRssSubscription,
+  useDeleteRssSubscription,
+  useUpdateRssSubscription,
+};
