@@ -201,6 +201,37 @@ export function isHostnameBlockedForServerSideFetch(hostname: string) {
   return !normalized.includes(".") && isIP(normalized) === 0;
 }
 
+function extractIPv4FromIPv6Segments(segments: number[]) {
+  if (segments.length !== 8) return null;
+
+  const isIPv4Mapped =
+    segments[0] === 0 &&
+    segments[1] === 0 &&
+    segments[2] === 0 &&
+    segments[3] === 0 &&
+    segments[4] === 0 &&
+    segments[5] === 0xffff;
+
+  const isIPv4Compatible =
+    segments[0] === 0 &&
+    segments[1] === 0 &&
+    segments[2] === 0 &&
+    segments[3] === 0 &&
+    segments[4] === 0 &&
+    segments[5] === 0 &&
+    (segments[6] !== 0 || segments[7] !== 0);
+
+  if (!isIPv4Mapped && !isIPv4Compatible) return null;
+
+  const octets = [
+    (segments[6] >> 8) & 0xff,
+    segments[6] & 0xff,
+    (segments[7] >> 8) & 0xff,
+    segments[7] & 0xff,
+  ];
+  return octets.join(".");
+}
+
 export function isIpAddressBlockedForServerSideFetch(address: string) {
   const ipv4 =
     parseIPv4(address) ?? (() => {
@@ -216,6 +247,20 @@ export function isIpAddressBlockedForServerSideFetch(address: string) {
 
   const ipv6 = parseIPv6(address);
   if (ipv6 === null) return true;
+
+  const embeddedIPv4 = extractIPv4FromIPv6Segments(ipv6);
+  if (embeddedIPv4 !== null) {
+    const embeddedValue = parseIPv4(embeddedIPv4);
+    if (embeddedValue !== null) {
+      if (
+        IPV4_BLOCKED_RANGES.some(
+          ({ network, mask }) => (embeddedValue & mask) === (network & mask)
+        )
+      ) {
+        return true;
+      }
+    }
+  }
 
   return IPV6_BLOCKED_RANGES.some(({ network, prefix }) =>
     ipv6MatchesPrefix(ipv6, network, prefix)
