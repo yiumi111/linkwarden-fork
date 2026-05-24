@@ -1,0 +1,843 @@
+diff --git a/apps/web/components/LinkDetails.tsx b/apps/web/components/LinkDetails.tsx
+index 94f858e2..7ec80edb 100644
+--- a/apps/web/components/LinkDetails.tsx
++++ b/apps/web/components/LinkDetails.tsx
+@@ -25,6 +25,11 @@ import toast from "react-hot-toast";
+ import CollectionSelection from "./InputSelect/CollectionSelection";
+ import TagSelection from "./InputSelect/TagSelection";
+ import unescapeString from "@/lib/client/unescapeString";
++import {
++  getLinkDisplayBadges,
++  getLinkDisplayTitle,
++  getLinkExternalOpenUrl,
++} from "@/lib/client/linkDisplayMeta";
+ import IconPopover from "./IconPopover";
+ import TextInput from "./TextInput";
+ import usePermissions from "@/hooks/usePermissions";
+@@ -69,6 +74,24 @@ export default function LinkDetails({
+   const router = useRouter();
+ 
+   const isPublicRoute = router.pathname.startsWith("/public") ? true : false;
++  const displayTitle = getLinkDisplayTitle(link);
++  const externalOpenUrl = getLinkExternalOpenUrl(link);
++  const waybackUrl = externalOpenUrl
++    ? `https://web.archive.org/web/${externalOpenUrl.replace(
++        /(^\w+:|^)\/\//,
++        ""
++      )}`
++    : "";
++  const displayBadges = getLinkDisplayBadges(link);
++  const collectionBadge = displayBadges.find(
++    (badge) => badge.kind === "collection"
++  );
++  const tagBadges = displayBadges.filter((badge) => badge.kind === "tag");
++  const preservedFormatLabels = new Map(
++    displayBadges
++      .filter((badge) => badge.kind === "format")
++      .map((badge) => [badge.value, badge.label])
++  );
+ 
+   const [collectionOwner, setCollectionOwner] = useState({
+     id: null as unknown as number,
+@@ -284,9 +307,9 @@ export default function LinkDetails({
+           {mode === "view" && (
+             <div className="text-xl mt-2 pr-7">
+               <p
+-                className={clsx("relative w-fit", !link.name && "text-neutral")}
++                className={clsx("relative w-fit", !displayTitle && "text-neutral")}
+               >
+-                {unescapeString(link.name) || t("untitled")}
++                {unescapeString(displayTitle)}
+               </p>
+             </div>
+           )}
+@@ -317,9 +340,17 @@ export default function LinkDetails({
+ 
+               <div className="relative">
+                 <div className="rounded-md p-2 bg-base-200 hide-scrollbar overflow-x-auto whitespace-nowrap flex justify-between items-center gap-2 pr-14">
+-                  <Link href={link.url} title={link.url} target="_blank">
+-                    {link.url}
+-                  </Link>
++                  {externalOpenUrl ? (
++                    <Link
++                      href={externalOpenUrl}
++                      title={externalOpenUrl}
++                      target="_blank"
++                    >
++                      {link.url}
++                    </Link>
++                  ) : (
++                    <p>{link.url}</p>
++                  )}
+                   <div className="absolute right-0 px-2 bg-base-200">
+                     <CopyButton text={link.url} />
+                   </div>
+@@ -361,7 +392,7 @@ export default function LinkDetails({
+                   }
+                   className="rounded-md p-2 bg-base-200 border border-base-200 hide-scrollbar overflow-x-auto whitespace-nowrap flex justify-between items-center gap-2 pr-14"
+                 >
+-                  <p>{link.collection.name}</p>
++                  <p>{collectionBadge?.label || link.collection.name}</p>
+                   <div className="absolute right-0 px-2 bg-base-200">
+                     {link.collection.icon ? (
+                       <Icon
+@@ -404,22 +435,22 @@ export default function LinkDetails({
+ 
+             {mode === "view" ? (
+               <div className="flex gap-2 flex-wrap rounded-md p-2 bg-base-200 border border-base-200 w-full text-xs">
+-                {link.tags && link.tags[0] ? (
+-                  link.tags.map((tag) =>
++                {tagBadges[0] ? (
++                  link.tags.map((tag, index) =>
+                     isPublicRoute ? (
+                       <div
+-                        key={tag.id}
++                        key={tag.id || index}
+                         className="bg-base-200 p-1 hover:bg-neutral-content rounded-md duration-100"
+                       >
+-                        {tag.name}
++                        {tagBadges[index]?.label || tag.name}
+                       </div>
+                     ) : (
+                       <Link
+                         href={"/tags/" + tag.id}
+-                        key={tag.id}
++                        key={tag.id || index}
+                         className="bg-base-200 py-1 px-2 hover:bg-neutral-content rounded-sm duration-150"
+                       >
+-                        {tag.name}
++                        {tagBadges[index]?.label || tag.name}
+                       </Link>
+                     )
+                   )
+@@ -505,7 +536,7 @@ export default function LinkDetails({
+                 {formatAvailable(link, "monolith") ? (
+                   <>
+                     <PreservedFormatRow
+-                      name={t("webpage")}
++                      name={preservedFormatLabels.get("webpage") || t("webpage")}
+                       icon={"bi-filetype-html"}
+                       format={ArchivedFormat.monolith}
+                       link={link}
+@@ -518,7 +549,10 @@ export default function LinkDetails({
+                 {formatAvailable(link, "image") ? (
+                   <>
+                     <PreservedFormatRow
+-                      name={t("screenshot")}
++                      name={
++                        preservedFormatLabels.get("screenshot") ||
++                        t("screenshot")
++                      }
+                       icon={"bi-file-earmark-image"}
+                       format={
+                         link?.image?.endsWith("png")
+@@ -535,7 +569,7 @@ export default function LinkDetails({
+                 {formatAvailable(link, "pdf") ? (
+                   <>
+                     <PreservedFormatRow
+-                      name={t("pdf")}
++                      name={preservedFormatLabels.get("pdf") || t("pdf")}
+                       icon={"bi-file-earmark-pdf"}
+                       format={ArchivedFormat.pdf}
+                       link={link}
+@@ -548,7 +582,9 @@ export default function LinkDetails({
+                 {formatAvailable(link, "readable") ? (
+                   <>
+                     <PreservedFormatRow
+-                      name={t("readable")}
++                      name={
++                        preservedFormatLabels.get("readable") || t("readable")
++                      }
+                       icon={"bi-file-earmark-text"}
+                       format={ArchivedFormat.readability}
+                       link={link}
+@@ -592,12 +628,9 @@ export default function LinkDetails({
+                   </div>
+                 ) : undefined}
+ 
+-                {link.url && (
++                {waybackUrl && (
+                   <Link
+-                    href={`https://web.archive.org/web/${link?.url?.replace(
+-                      /(^\w+:|^)\/\//,
+-                      ""
+-                    )}`}
++                    href={waybackUrl}
+                     target="_blank"
+                     className="text-neutral mx-auto duration-100 hover:opacity-60 flex gap-2 w-1/2 justify-center items-center text-sm"
+                   >
+diff --git a/apps/web/components/LinkViews/LinkComponents/LinkCard.tsx b/apps/web/components/LinkViews/LinkComponents/LinkCard.tsx
+index b64386e1..8160dc62 100644
+--- a/apps/web/components/LinkViews/LinkComponents/LinkCard.tsx
++++ b/apps/web/components/LinkViews/LinkComponents/LinkCard.tsx
+@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
+ import { useDraggable } from "@dnd-kit/core";
+ import { cn } from "@/lib/utils";
+ import { TFunction } from "i18next";
++import { getLinkDisplayTitle } from "@/lib/client/linkDisplayMeta";
+ 
+ type Props = {
+   link: LinkIncludingShortenedCollectionAndTags;
+@@ -66,6 +67,7 @@ function LinkCard({
+   const ref = useRef<HTMLDivElement>(null);
+ 
+   const [linkModal, setLinkModal] = useState(false);
++  const displayTitle = getLinkDisplayTitle(link);
+ 
+   return (
+     <div
+@@ -143,7 +145,7 @@ function LinkCard({
+             <div className="p-3 flex flex-col gap-2">
+               {show.name && (
+                 <p className="truncate w-full text-primary text-sm">
+-                  {unescapeString(link.name)}
++                  {unescapeString(displayTitle)}
+                 </p>
+               )}
+ 
+@@ -171,7 +173,6 @@ function LinkCard({
+           </div>
+         </div>
+ 
+-        {/* Overlay on hover */}
+         <div className="absolute pointer-events-none top-0 left-0 right-0 bottom-0 bg-base-100 bg-opacity-0 group-hover:bg-opacity-20 group-focus-within:opacity-20 rounded-xl duration-100"></div>
+         <LinkActions
+           link={link}
+diff --git a/apps/web/components/LinkViews/LinkComponents/LinkList.tsx b/apps/web/components/LinkViews/LinkComponents/LinkList.tsx
+index 1e452810..0ec738b9 100644
+--- a/apps/web/components/LinkViews/LinkComponents/LinkList.tsx
++++ b/apps/web/components/LinkViews/LinkComponents/LinkList.tsx
+@@ -2,7 +2,7 @@ import {
+   CollectionIncludingMembersAndLinkCount,
+   LinkIncludingShortenedCollectionAndTags,
+ } from "@linkwarden/types/global";
+-import React, { useState } from "react";
++import React, { useMemo, useState } from "react";
+ import unescapeString from "@/lib/client/unescapeString";
+ import LinkActions from "@/components/LinkViews/LinkComponents/LinkActions";
+ import LinkDate from "@/components/LinkViews/LinkComponents/LinkDate";
+@@ -18,6 +18,11 @@ import LinkFormats from "./LinkFormats";
+ import openLink from "@/lib/client/openLink";
+ import { useDraggable } from "@dnd-kit/core";
+ import { TFunction } from "i18next";
++import {
++  getLinkDisplaySubtitle,
++  getLinkDisplayTitle,
++  getLinkExternalOpenUrl,
++} from "@/lib/client/linkDisplayMeta";
+ 
+ type Props = {
+   link: LinkIncludingShortenedCollectionAndTags;
+@@ -58,6 +63,25 @@ function LinkList({
+   } = useLocalSettingsStore();
+ 
+   const [linkModal, setLinkModal] = useState(false);
++  const displayTitle = getLinkDisplayTitle(link);
++  const displaySubtitle = getLinkDisplaySubtitle(link);
++  const externalOpenUrl = getLinkExternalOpenUrl(link);
++
++  const shouldShowSubtitle = useMemo(() => {
++    if (!displaySubtitle) {
++      return false;
++    }
++
++    if (!externalOpenUrl) {
++      return true;
++    }
++
++    try {
++      return displaySubtitle !== new URL(externalOpenUrl).hostname;
++    } catch {
++      return true;
++    }
++  }, [displaySubtitle, externalOpenUrl]);
+ 
+   return (
+     <>
+@@ -98,7 +122,7 @@ function LinkList({
+             {show.name && (
+               <div className="flex gap-1 mr-20">
+                 <p className="truncate text-primary">
+-                  {unescapeString(link.name)}
++                  {unescapeString(displayTitle)}
+                 </p>
+                 {show.preserved_formats &&
+                   link.type === "url" &&
+@@ -110,6 +134,12 @@ function LinkList({
+               </div>
+             )}
+ 
++            {shouldShowSubtitle && (
++              <p className="mt-1 truncate text-xs text-neutral">
++                {unescapeString(displaySubtitle)}
++              </p>
++            )}
++
+             <div className="mt-1 flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-neutral">
+               <div className="flex items-center gap-x-3 text-neutral flex-wrap">
+                 {show.link && <LinkTypeBadge link={link} />}
+diff --git a/apps/web/components/LinkViews/LinkComponents/LinkTypeBadge.tsx b/apps/web/components/LinkViews/LinkComponents/LinkTypeBadge.tsx
+index 61b5fb77..670f34fe 100644
+--- a/apps/web/components/LinkViews/LinkComponents/LinkTypeBadge.tsx
++++ b/apps/web/components/LinkViews/LinkComponents/LinkTypeBadge.tsx
+@@ -1,23 +1,18 @@
+ import { LinkIncludingShortenedCollectionAndTags } from "@linkwarden/types/global";
+ import Link from "next/link";
+-import React, { useEffect, useState } from "react";
++import React from "react";
++import {
++  getLinkDisplaySubtitle,
++  getLinkExternalOpenUrl,
++} from "@/lib/client/linkDisplayMeta";
+ 
+ function LinkTypeBadge({
+   link,
+ }: {
+   link: LinkIncludingShortenedCollectionAndTags;
+ }) {
+-  const [url, setUrl] = useState("");
+-
+-  useEffect(() => {
+-    if (link.type === "url" && link.url) {
+-      try {
+-        setUrl(new URL(link.url).host.toLowerCase());
+-      } catch (error) {
+-        console.log(error);
+-      }
+-    }
+-  }, [link]);
++  const externalOpenUrl = getLinkExternalOpenUrl(link);
++  const displaySubtitle = getLinkDisplaySubtitle(link);
+ 
+   const typeIcon = () => {
+     switch (link.type) {
+@@ -30,18 +25,18 @@ function LinkTypeBadge({
+     }
+   };
+ 
+-  return link.url && url ? (
++  return link.url && externalOpenUrl && displaySubtitle ? (
+     <Link
+-      href={link.url || ""}
++      href={externalOpenUrl}
+       target="_blank"
+-      title={link.url || ""}
++      title={externalOpenUrl}
+       onClick={(e) => {
+         e.stopPropagation();
+       }}
+       className="flex gap-1 item-center select-none text-neutral hover:opacity-70 duration-100 max-w-full w-fit"
+     >
+       <i className="bi-link-45deg text-lg leading-none"></i>
+-      <p className="text-xs truncate">{url}</p>
++      <p className="text-xs truncate">{displaySubtitle}</p>
+     </Link>
+   ) : (
+     <div className="flex gap-1 item-center select-none text-neutral duration-100 max-w-full w-fit">
+diff --git a/apps/web/components/ModalContent/LinkModal.tsx b/apps/web/components/ModalContent/LinkModal.tsx
+index 731216b0..9e65d51a 100644
+--- a/apps/web/components/ModalContent/LinkModal.tsx
++++ b/apps/web/components/ModalContent/LinkModal.tsx
+@@ -17,6 +17,7 @@ import {
+ } from "@/components/ui/dropdown-menu";
+ import { Button } from "../ui/button";
+ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
++import { getLinkExternalOpenUrl } from "@/lib/client/linkDisplayMeta";
+ 
+ type Props = {
+   onClose: Function;
+@@ -46,6 +47,7 @@ export default function LinkModal({
+   const deleteLink = useDeleteLink({ toast, t });
+ 
+   const [mode, setMode] = useState<"view" | "edit">(activeMode || "view");
++  const externalOpenUrl = getLinkExternalOpenUrl(link);
+ 
+   const handleDelete = async (e: React.MouseEvent) => {
+     setTimeout(() => (document.body.style.pointerEvents = ""), 0);
+@@ -153,7 +155,7 @@ export default function LinkModal({
+               </DropdownMenuContent>
+             </DropdownMenu>
+           )}
+-          {link.url && (
++          {externalOpenUrl && (
+             <Button
+               asChild
+               variant="simple"
+@@ -161,7 +163,7 @@ export default function LinkModal({
+               className="rounded-full"
+             >
+               <Link
+-                href={link.url}
++                href={externalOpenUrl}
+                 target="_blank"
+                 className="bi-box-arrow-up-right text-base-content opacity-50 hover:opacity-100 select-none z-10"
+               ></Link>
+diff --git a/apps/web/lib/client/linkDisplayMeta.test.ts b/apps/web/lib/client/linkDisplayMeta.test.ts
+new file mode 100644
+index 00000000..a58538a7
+--- /dev/null
++++ b/apps/web/lib/client/linkDisplayMeta.test.ts
+@@ -0,0 +1,129 @@
++import { describe, expect, it } from "vitest";
++import { ArchivedFormat } from "@linkwarden/types/global";
++import {
++  getLinkDisplayBadges,
++  getLinkDisplaySubtitle,
++  getLinkDisplayTitle,
++  getLinkExternalOpenUrl,
++  type LinkDisplayMetaInput,
++} from "./linkDisplayMeta";
++
++const buildLink = (
++  overrides: Partial<LinkDisplayMetaInput> = {}
++): LinkDisplayMetaInput => ({
++  name: "",
++  url: "",
++  description: "",
++  collection: {
++    name: "",
++    ownerId: 1,
++  },
++  tags: [],
++  ...overrides,
++});
++
++describe("linkDisplayMeta", () => {
++  it("uses the trimmed link name as the display title", () => {
++    const link = buildLink({
++      name: "  Deep dive article  ",
++      url: "https://example.com/post",
++    });
++
++    expect(getLinkDisplayTitle(link)).toBe("Deep dive article");
++  });
++
++  it("falls back to the URL hostname when the link has no title", () => {
++    const link = buildLink({
++      name: "   ",
++      url: "https://sub.example.com/article",
++    });
++
++    expect(getLinkDisplayTitle(link)).toBe("sub.example.com");
++    expect(getLinkDisplaySubtitle(link)).toBe("sub.example.com");
++  });
++
++  it("falls back to the raw URL when the URL is invalid", () => {
++    const link = buildLink({
++      url: "not a valid url",
++    });
++
++    expect(getLinkDisplayTitle(link)).toBe("not a valid url");
++    expect(getLinkExternalOpenUrl(link)).toBe("");
++  });
++
++  it("adds https to domain-like URLs without a protocol", () => {
++    const link = buildLink({
++      url: "example.com/docs/getting-started",
++    });
++
++    expect(getLinkExternalOpenUrl(link)).toBe(
++      "https://example.com/docs/getting-started"
++    );
++  });
++
++  it("uses the description as the subtitle fallback", () => {
++    const link = buildLink({
++      description: "  A   short\nsummary of the saved page.  ",
++    });
++
++    expect(getLinkDisplaySubtitle(link)).toBe(
++      "A short summary of the saved page."
++    );
++  });
++
++  it("builds badges for collection, multiple tags, and preserved formats", () => {
++    const link = buildLink({
++      collection: {
++        name: "Reading List",
++        ownerId: 1,
++      },
++      tags: [{ name: "frontend" }, { name: "react" }] as never,
++      pdf: "archives/42.pdf",
++      readable: "archives/42.html",
++      monolith: "archives/42.mhtml",
++      image: "archives/42.png",
++    });
++
++    expect(getLinkDisplayBadges(link)).toEqual([
++      { kind: "collection", value: "Reading List", label: "Reading List" },
++      { kind: "tag", value: "frontend", label: "frontend" },
++      { kind: "tag", value: "react", label: "react" },
++      { kind: "format", value: "webpage", label: "Webpage" },
++      { kind: "format", value: "screenshot", label: "Screenshot" },
++      { kind: "format", value: "pdf", label: "PDF" },
++      { kind: "format", value: "readable", label: "Readable" },
++    ]);
++  });
++
++  it("supports preservedFormats arrays when building badges", () => {
++    const link = buildLink({
++      preservedFormats: [
++        ArchivedFormat.pdf,
++        ArchivedFormat.readability,
++        "monolith",
++        "png",
++      ],
++    });
++
++    expect(
++      getLinkDisplayBadges(link)
++        .filter((badge) => badge.kind === "format")
++        .map((badge) => badge.label)
++    ).toEqual(["Webpage", "Screenshot", "PDF", "Readable"]);
++  });
++
++  it("returns empty values when link fields are empty", () => {
++    const link = buildLink({
++      collection: {
++        name: "",
++        ownerId: 1,
++      },
++      tags: [],
++    });
++
++    expect(getLinkDisplayTitle(link)).toBe("");
++    expect(getLinkDisplaySubtitle(link)).toBe("");
++    expect(getLinkExternalOpenUrl(link)).toBe("");
++    expect(getLinkDisplayBadges(link)).toEqual([]);
++  });
++});
+diff --git a/apps/web/lib/client/linkDisplayMeta.ts b/apps/web/lib/client/linkDisplayMeta.ts
+new file mode 100644
+index 00000000..8b6becaa
+--- /dev/null
++++ b/apps/web/lib/client/linkDisplayMeta.ts
+@@ -0,0 +1,294 @@
++import {
++  ArchivedFormat,
++  LinkIncludingShortenedCollectionAndTags,
++} from "@linkwarden/types/global";
++
++type MaybeString = string | null | undefined;
++
++export type LinkDisplayFormatKey =
++  | "pdf"
++  | "readable"
++  | "webpage"
++  | "screenshot";
++
++export type LinkDisplayBadge =
++  | {
++      kind: "collection" | "tag";
++      value: string;
++      label: string;
++    }
++  | {
++      kind: "format";
++      value: LinkDisplayFormatKey;
++      label: string;
++    };
++
++export type LinkDisplayMetaInput = Partial<
++  Pick<
++    LinkIncludingShortenedCollectionAndTags,
++    | "name"
++    | "url"
++    | "description"
++    | "collection"
++    | "tags"
++    | "pdf"
++    | "readable"
++    | "monolith"
++    | "image"
++  >
++> & {
++  preservedFormats?: Array<ArchivedFormat | string | null | undefined> | null;
++};
++
++const DOMAIN_LIKE_PATTERN =
++  /^(?:\/\/)?(?:localhost|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?::\d{2,5})?(?:[/?#].*)?$/i;
++
++const FORMAT_LABELS: Record<LinkDisplayFormatKey, string> = {
++  pdf: "PDF",
++  readable: "Readable",
++  webpage: "Webpage",
++  screenshot: "Screenshot",
++};
++
++const FORMAT_ORDER: LinkDisplayFormatKey[] = [
++  "webpage",
++  "screenshot",
++  "pdf",
++  "readable",
++];
++
++const normalizeText = (value: MaybeString) => value?.trim() ?? "";
++
++const collapseWhitespace = (value: MaybeString) =>
++  normalizeText(value).replace(/\s+/g, " ");
++
++const getRawUrl = (input?: LinkDisplayMetaInput | MaybeString) =>
++  typeof input === "string" ? normalizeText(input) : normalizeText(input?.url);
++
++const tryParseHttpUrl = (value: string) => {
++  try {
++    const parsedUrl = new URL(value);
++
++    if (
++      parsedUrl.protocol !== "http:" &&
++      parsedUrl.protocol !== "https:"
++    ) {
++      return null;
++    }
++
++    return parsedUrl;
++  } catch {
++    return null;
++  }
++};
++
++const getHostnameFromUrl = (input?: LinkDisplayMetaInput | MaybeString) => {
++  const externalOpenUrl = getLinkExternalOpenUrl(input);
++
++  if (!externalOpenUrl) {
++    return "";
++  }
++
++  return tryParseHttpUrl(externalOpenUrl)?.hostname ?? "";
++};
++
++const hasPreservedAsset = (value: MaybeString) => {
++  const normalizedValue = normalizeText(value);
++  return normalizedValue !== "" && normalizedValue !== "unavailable";
++};
++
++const normalizePreservedFormat = (
++  value: ArchivedFormat | string | null | undefined
++): LinkDisplayFormatKey | null => {
++  if (value === ArchivedFormat.pdf) {
++    return "pdf";
++  }
++
++  if (value === ArchivedFormat.readability) {
++    return "readable";
++  }
++
++  if (value === ArchivedFormat.monolith) {
++    return "webpage";
++  }
++
++  if (value === ArchivedFormat.png || value === ArchivedFormat.jpeg) {
++    return "screenshot";
++  }
++
++  const normalizedValue = normalizeText(
++    typeof value === "string" ? value.toLowerCase() : ""
++  );
++
++  if (normalizedValue === "pdf") {
++    return "pdf";
++  }
++
++  if (normalizedValue === "readable" || normalizedValue === "readability") {
++    return "readable";
++  }
++
++  if (normalizedValue === "webpage" || normalizedValue === "monolith") {
++    return "webpage";
++  }
++
++  if (
++    normalizedValue === "screenshot" ||
++    normalizedValue === "image" ||
++    normalizedValue === "png" ||
++    normalizedValue === "jpeg" ||
++    normalizedValue === "jpg"
++  ) {
++    return "screenshot";
++  }
++
++  return null;
++};
++
++export const getLinkDisplayTitle = (link?: LinkDisplayMetaInput) => {
++  const displayName = normalizeText(link?.name);
++
++  if (displayName) {
++    return displayName;
++  }
++
++  const hostname = getHostnameFromUrl(link);
++
++  if (hostname) {
++    return hostname;
++  }
++
++  return getRawUrl(link);
++};
++
++export const getLinkDisplaySubtitle = (link?: LinkDisplayMetaInput) => {
++  const hostname = getHostnameFromUrl(link);
++
++  if (hostname) {
++    return hostname;
++  }
++
++  const description = collapseWhitespace(link?.description);
++
++  if (!description) {
++    return "";
++  }
++
++  return description.length > 140
++    ? `${description.slice(0, 139).trimEnd()}…`
++    : description;
++};
++
++export const getLinkDisplayBadges = (
++  link?: LinkDisplayMetaInput
++): LinkDisplayBadge[] => {
++  const badges: LinkDisplayBadge[] = [];
++  const addedBadges = new Set<string>();
++
++  const appendBadge = (badge: LinkDisplayBadge) => {
++    if (!badge.label) {
++      return;
++    }
++
++    const dedupeKey = `${badge.kind}:${badge.value}`;
++
++    if (addedBadges.has(dedupeKey)) {
++      return;
++    }
++
++    addedBadges.add(dedupeKey);
++    badges.push(badge);
++  };
++
++  const collectionName = normalizeText(link?.collection?.name);
++
++  if (collectionName) {
++    appendBadge({
++      kind: "collection",
++      value: collectionName,
++      label: collectionName,
++    });
++  }
++
++  link?.tags?.forEach((tag) => {
++    const tagName = normalizeText(tag?.name);
++
++    if (!tagName) {
++      return;
++    }
++
++    appendBadge({
++      kind: "tag",
++      value: tagName,
++      label: tagName,
++    });
++  });
++
++  const availableFormats = new Set<LinkDisplayFormatKey>();
++
++  link?.preservedFormats?.forEach((format) => {
++    const normalizedFormat = normalizePreservedFormat(format);
++
++    if (normalizedFormat) {
++      availableFormats.add(normalizedFormat);
++    }
++  });
++
++  if (hasPreservedAsset(link?.monolith)) {
++    availableFormats.add("webpage");
++  }
++
++  if (hasPreservedAsset(link?.image)) {
++    availableFormats.add("screenshot");
++  }
++
++  if (hasPreservedAsset(link?.pdf)) {
++    availableFormats.add("pdf");
++  }
++
++  if (hasPreservedAsset(link?.readable)) {
++    availableFormats.add("readable");
++  }
++
++  FORMAT_ORDER.forEach((format) => {
++    if (!availableFormats.has(format)) {
++      return;
++    }
++
++    appendBadge({
++      kind: "format",
++      value: format,
++      label: FORMAT_LABELS[format],
++    });
++  });
++
++  return badges;
++};
++
++export const getLinkExternalOpenUrl = (
++  input?: LinkDisplayMetaInput | MaybeString
++) => {
++  const rawUrl = getRawUrl(input);
++
++  if (!rawUrl) {
++    return "";
++  }
++
++  if (/^https?:\/\//i.test(rawUrl)) {
++    return tryParseHttpUrl(rawUrl) ? rawUrl : "";
++  }
++
++  const protocolRelativeUrl = rawUrl.startsWith("//")
++    ? `https:${rawUrl}`
++    : rawUrl;
++
++  if (!DOMAIN_LIKE_PATTERN.test(protocolRelativeUrl)) {
++    return "";
++  }
++
++  const normalizedUrl = protocolRelativeUrl.startsWith("https://")
++    ? protocolRelativeUrl
++    : `https://${protocolRelativeUrl.replace(/^\/\//, "")}`;
++
++  return tryParseHttpUrl(normalizedUrl) ? normalizedUrl : "";
++};
+diff --git a/apps/web/lib/client/openLink.ts b/apps/web/lib/client/openLink.ts
+index f9d101f2..162b28c1 100644
+--- a/apps/web/lib/client/openLink.ts
++++ b/apps/web/lib/client/openLink.ts
+@@ -1,6 +1,7 @@
+ import { LinkIncludingShortenedCollectionAndTags } from "@linkwarden/types/global";
+ import getFormatBasedOnPreference from "@linkwarden/lib/getFormatBasedOnPreference";
+ import { LinksRouteTo } from "@linkwarden/prisma/client";
++import { getLinkExternalOpenUrl } from "./linkDisplayMeta";
+ 
+ const openLink = (
+   link: LinkIncludingShortenedCollectionAndTags,
+@@ -15,12 +16,17 @@ const openLink = (
+       preference: user.linksRouteTo,
+     });
+ 
+-    window.open(
++    const targetUrl =
+       format !== null
+         ? `/preserved/${link?.id}?format=${format}`
+-        : (link.url as string),
+-      "_blank"
+-    );
++        : getLinkExternalOpenUrl(link);
++
++    if (!targetUrl) {
++      openModal();
++      return;
++    }
++
++    window.open(targetUrl, "_blank");
+   }
+ };
+ 

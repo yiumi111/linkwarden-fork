@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "../ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getLinkExternalOpenUrl } from "@/lib/client/linkDisplayMeta";
 
 type Props = {
   onClose: Function;
@@ -46,6 +47,7 @@ export default function LinkModal({
   const deleteLink = useDeleteLink({ toast, t });
 
   const [mode, setMode] = useState<"view" | "edit">(activeMode || "view");
+  const externalOpenUrl = getLinkExternalOpenUrl(link);
 
   const handleDelete = async (e: React.MouseEvent) => {
     setTimeout(() => (document.body.style.pointerEvents = ""), 0);
@@ -153,7 +155,7 @@ export default function LinkModal({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          {link.url && (
+          {externalOpenUrl && (
             <Button
               asChild
               variant="simple"
@@ -161,7 +163,7 @@ export default function LinkModal({
               className="rounded-full"
             >
               <Link
-                href={link.url}
+                href={externalOpenUrl}
                 target="_blank"
                 className="bi-box-arrow-up-right text-base-content opacity-50 hover:opacity-100 select-none z-10"
               ></Link>

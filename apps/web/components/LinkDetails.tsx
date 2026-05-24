@@ -25,6 +25,11 @@ import toast from "react-hot-toast";
 import CollectionSelection from "./InputSelect/CollectionSelection";
 import TagSelection from "./InputSelect/TagSelection";
 import unescapeString from "@/lib/client/unescapeString";
+import {
+  getLinkDisplayBadges,
+  getLinkDisplayTitle,
+  getLinkExternalOpenUrl,
+} from "@/lib/client/linkDisplayMeta";
 import IconPopover from "./IconPopover";
 import TextInput from "./TextInput";
 import usePermissions from "@/hooks/usePermissions";
@@ -69,6 +74,24 @@ export default function LinkDetails({
   const router = useRouter();
 
   const isPublicRoute = router.pathname.startsWith("/public") ? true : false;
+  const displayTitle = getLinkDisplayTitle(link);
+  const externalOpenUrl = getLinkExternalOpenUrl(link);
+  const waybackUrl = externalOpenUrl
+    ? `https://web.archive.org/web/${externalOpenUrl.replace(
+        /(^\w+:|^)\/\//,
+        ""
+      )}`
+    : "";
+  const displayBadges = getLinkDisplayBadges(link);
+  const collectionBadge = displayBadges.find(
+    (badge) => badge.kind === "collection"
+  );
+  const tagBadges = displayBadges.filter((badge) => badge.kind === "tag");
+  const preservedFormatLabels = new Map(
+    displayBadges
+      .filter((badge) => badge.kind === "format")
+      .map((badge) => [badge.value, badge.label])
+  );
 
   const [collectionOwner, setCollectionOwner] = useState({
     id: null as unknown as number,
@@ -284,9 +307,9 @@ export default function LinkDetails({
           {mode === "view" && (
             <div className="text-xl mt-2 pr-7">
               <p
-                className={clsx("relative w-fit", !link.name && "text-neutral")}
+                className={clsx("relative w-fit", !displayTitle && "text-neutral")}
               >
-                {unescapeString(link.name) || t("untitled")}
+                {unescapeString(displayTitle)}
               </p>
             </div>
           )}
@@ -317,9 +340,17 @@ export default function LinkDetails({
 
               <div className="relative">
                 <div className="rounded-md p-2 bg-base-200 hide-scrollbar overflow-x-auto whitespace-nowrap flex justify-between items-center gap-2 pr-14">
-                  <Link href={link.url} title={link.url} target="_blank">
-                    {link.url}
-                  </Link>
+                  {externalOpenUrl ? (
+                    <Link
+                      href={externalOpenUrl}
+                      title={externalOpenUrl}
+                      target="_blank"
+                    >
+                      {link.url}
+                    </Link>
+                  ) : (
+                    <p>{link.url}</p>
+                  )}
                   <div className="absolute right-0 px-2 bg-base-200">
                     <CopyButton text={link.url} />
                   </div>
@@ -361,7 +392,7 @@ export default function LinkDetails({
                   }
                   className="rounded-md p-2 bg-base-200 border border-base-200 hide-scrollbar overflow-x-auto whitespace-nowrap flex justify-between items-center gap-2 pr-14"
                 >
-                  <p>{link.collection.name}</p>
+                  <p>{collectionBadge?.label || link.collection.name}</p>
                   <div className="absolute right-0 px-2 bg-base-200">
                     {link.collection.icon ? (
                       <Icon
@@ -404,22 +435,22 @@ export default function LinkDetails({
 
             {mode === "view" ? (
               <div className="flex gap-2 flex-wrap rounded-md p-2 bg-base-200 border border-base-200 w-full text-xs">
-                {link.tags && link.tags[0] ? (
-                  link.tags.map((tag) =>
+                {tagBadges[0] ? (
+                  link.tags.map((tag, index) =>
                     isPublicRoute ? (
                       <div
-                        key={tag.id}
+                        key={tag.id || index}
                         className="bg-base-200 p-1 hover:bg-neutral-content rounded-md duration-100"
                       >
-                        {tag.name}
+                        {tagBadges[index]?.label || tag.name}
                       </div>
                     ) : (
                       <Link
                         href={"/tags/" + tag.id}
-                        key={tag.id}
+                        key={tag.id || index}
                         className="bg-base-200 py-1 px-2 hover:bg-neutral-content rounded-sm duration-150"
                       >
-                        {tag.name}
+                        {tagBadges[index]?.label || tag.name}
                       </Link>
                     )
                   )
@@ -505,7 +536,7 @@ export default function LinkDetails({
                 {formatAvailable(link, "monolith") ? (
                   <>
                     <PreservedFormatRow
-                      name={t("webpage")}
+                      name={preservedFormatLabels.get("webpage") || t("webpage")}
                       icon={"bi-filetype-html"}
                       format={ArchivedFormat.monolith}
                       link={link}
@@ -518,7 +549,10 @@ export default function LinkDetails({
                 {formatAvailable(link, "image") ? (
                   <>
                     <PreservedFormatRow
-                      name={t("screenshot")}
+                      name={
+                        preservedFormatLabels.get("screenshot") ||
+                        t("screenshot")
+                      }
                       icon={"bi-file-earmark-image"}
                       format={
                         link?.image?.endsWith("png")
@@ -535,7 +569,7 @@ export default function LinkDetails({
                 {formatAvailable(link, "pdf") ? (
                   <>
                     <PreservedFormatRow
-                      name={t("pdf")}
+                      name={preservedFormatLabels.get("pdf") || t("pdf")}
                       icon={"bi-file-earmark-pdf"}
                       format={ArchivedFormat.pdf}
                       link={link}
@@ -548,7 +582,9 @@ export default function LinkDetails({
                 {formatAvailable(link, "readable") ? (
                   <>
                     <PreservedFormatRow
-                      name={t("readable")}
+                      name={
+                        preservedFormatLabels.get("readable") || t("readable")
+                      }
                       icon={"bi-file-earmark-text"}
                       format={ArchivedFormat.readability}
                       link={link}
@@ -592,12 +628,9 @@ export default function LinkDetails({
                   </div>
                 ) : undefined}
 
-                {link.url && (
+                {waybackUrl && (
                   <Link
-                    href={`https://web.archive.org/web/${link?.url?.replace(
-                      /(^\w+:|^)\/\//,
-                      ""
-                    )}`}
+                    href={waybackUrl}
                     target="_blank"
                     className="text-neutral mx-auto duration-100 hover:opacity-60 flex gap-2 w-1/2 justify-center items-center text-sm"
                   >

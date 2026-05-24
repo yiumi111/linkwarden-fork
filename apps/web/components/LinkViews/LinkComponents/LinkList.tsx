@@ -2,7 +2,7 @@ import {
   CollectionIncludingMembersAndLinkCount,
   LinkIncludingShortenedCollectionAndTags,
 } from "@linkwarden/types/global";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import unescapeString from "@/lib/client/unescapeString";
 import LinkActions from "@/components/LinkViews/LinkComponents/LinkActions";
 import LinkDate from "@/components/LinkViews/LinkComponents/LinkDate";
@@ -18,6 +18,11 @@ import LinkFormats from "./LinkFormats";
 import openLink from "@/lib/client/openLink";
 import { useDraggable } from "@dnd-kit/core";
 import { TFunction } from "i18next";
+import {
+  getLinkDisplaySubtitle,
+  getLinkDisplayTitle,
+  getLinkExternalOpenUrl,
+} from "@/lib/client/linkDisplayMeta";
 
 type Props = {
   link: LinkIncludingShortenedCollectionAndTags;
@@ -58,6 +63,25 @@ function LinkList({
   } = useLocalSettingsStore();
 
   const [linkModal, setLinkModal] = useState(false);
+  const displayTitle = getLinkDisplayTitle(link);
+  const displaySubtitle = getLinkDisplaySubtitle(link);
+  const externalOpenUrl = getLinkExternalOpenUrl(link);
+
+  const shouldShowSubtitle = useMemo(() => {
+    if (!displaySubtitle) {
+      return false;
+    }
+
+    if (!externalOpenUrl) {
+      return true;
+    }
+
+    try {
+      return displaySubtitle !== new URL(externalOpenUrl).hostname;
+    } catch {
+      return true;
+    }
+  }, [displaySubtitle, externalOpenUrl]);
 
   return (
     <>
@@ -98,7 +122,7 @@ function LinkList({
             {show.name && (
               <div className="flex gap-1 mr-20">
                 <p className="truncate text-primary">
-                  {unescapeString(link.name)}
+                  {unescapeString(displayTitle)}
                 </p>
                 {show.preserved_formats &&
                   link.type === "url" &&
@@ -108,6 +132,12 @@ function LinkList({
                     </div>
                   )}
               </div>
+            )}
+
+            {shouldShowSubtitle && (
+              <p className="mt-1 truncate text-xs text-neutral">
+                {unescapeString(displaySubtitle)}
+              </p>
             )}
 
             <div className="mt-1 flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-neutral">

@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { useDraggable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import { TFunction } from "i18next";
+import { getLinkDisplayTitle } from "@/lib/client/linkDisplayMeta";
 
 type Props = {
   link: LinkIncludingShortenedCollectionAndTags;
@@ -66,6 +67,7 @@ function LinkCard({
   const ref = useRef<HTMLDivElement>(null);
 
   const [linkModal, setLinkModal] = useState(false);
+  const displayTitle = getLinkDisplayTitle(link);
 
   return (
     <div
@@ -143,7 +145,7 @@ function LinkCard({
             <div className="p-3 flex flex-col gap-2">
               {show.name && (
                 <p className="truncate w-full text-primary text-sm">
-                  {unescapeString(link.name)}
+                  {unescapeString(displayTitle)}
                 </p>
               )}
 
@@ -171,7 +173,6 @@ function LinkCard({
           </div>
         </div>
 
-        {/* Overlay on hover */}
         <div className="absolute pointer-events-none top-0 left-0 right-0 bottom-0 bg-base-100 bg-opacity-0 group-hover:bg-opacity-20 group-focus-within:opacity-20 rounded-xl duration-100"></div>
         <LinkActions
           link={link}
