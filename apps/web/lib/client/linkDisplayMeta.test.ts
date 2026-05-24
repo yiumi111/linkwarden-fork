@@ -1,0 +1,327 @@
+import { describe, expect, it } from "vitest";
+import {
+  getLinkDisplayTitle,
+  getLinkDisplaySubtitle,
+  getLinkDisplayBadges,
+  getLinkExternalOpenUrl,
+} from "./linkDisplayMeta";
+
+describe("getLinkDisplayTitle", () => {
+  it("returns trimmed link.name when available", () => {
+    expect(
+      getLinkDisplayTitle({
+        name: "  My Awesome Link  ",
+        url: "https://example.com/page",
+      })
+    ).toBe("My Awesome Link");
+  });
+
+  it("falls back to url hostname when name is empty", () => {
+    expect(
+      getLinkDisplayTitle({
+        name: "",
+        url: "https://github.com/user/repo",
+      })
+    ).toBe("github.com");
+  });
+
+  it("falls back to url hostname when name is whitespace only", () => {
+    expect(
+      getLinkDisplayTitle({
+        name: "   ",
+        url: "https://example.com",
+      })
+    ).toBe("example.com");
+  });
+
+  it("falls back to raw url when url has no parseable hostname", () => {
+    expect(
+      getLinkDisplayTitle({
+        name: "",
+        url: "not-a-valid-url",
+      })
+    ).toBe("not-a-valid-url");
+  });
+
+  it("returns empty string when name is empty and url is missing", () => {
+    expect(
+      getLinkDisplayTitle({
+        name: "",
+        url: "",
+      })
+    ).toBe("");
+  });
+
+  it("returns empty string for undefined link", () => {
+    expect(getLinkDisplayTitle(undefined)).toBe("");
+  });
+
+  it("returns empty string for null link", () => {
+    expect(getLinkDisplayTitle(null)).toBe("");
+  });
+
+  it("returns empty string for link with no relevant fields", () => {
+    expect(getLinkDisplayTitle({})).toBe("");
+  });
+
+  it("returns name when name is null but url exists", () => {
+    expect(
+      getLinkDisplayTitle({
+        name: null,
+        url: "https://example.com",
+      })
+    ).toBe("example.com");
+  });
+
+  it("handles url with path and query in hostname fallback", () => {
+    expect(
+      getLinkDisplayTitle({
+        name: "",
+        url: "https://docs.example.com/path/to/page?query=1",
+      })
+    ).toBe("docs.example.com");
+  });
+});
+
+describe("getLinkDisplaySubtitle", () => {
+  it("returns hostname from url when available", () => {
+    expect(
+      getLinkDisplaySubtitle({
+        url: "https://example.com/blog/post",
+        description: "A detailed description",
+      })
+    ).toBe("example.com");
+  });
+
+  it("falls back to description when url has no valid hostname", () => {
+    expect(
+      getLinkDisplaySubtitle({
+        url: "not-a-valid-url",
+        description: "This is a fallback description",
+      })
+    ).toBe("This is a fallback description");
+  });
+
+  it("falls back to description when url is missing", () => {
+    expect(
+      getLinkDisplaySubtitle({
+        url: "",
+        description: "Only description available",
+      })
+    ).toBe("Only description available");
+  });
+
+  it("truncates long description to 120 characters with ellipsis", () => {
+    const longDesc = "A".repeat(200);
+    const result = getLinkDisplaySubtitle({
+      url: "",
+      description: longDesc,
+    });
+    expect(result).toBe("A".repeat(120) + "\u2026");
+  });
+
+  it("returns empty string when neither hostname nor description exists", () => {
+    expect(
+      getLinkDisplaySubtitle({
+        url: "",
+        description: "",
+      })
+    ).toBe("");
+  });
+
+  it("returns empty string for undefined link", () => {
+    expect(getLinkDisplaySubtitle(undefined)).toBe("");
+  });
+
+  it("returns empty string for null link", () => {
+    expect(getLinkDisplaySubtitle(null)).toBe("");
+  });
+
+  it("returns hostname when both url and description are present", () => {
+    expect(
+      getLinkDisplaySubtitle({
+        url: "https://github.com",
+        description: "Some description",
+      })
+    ).toBe("github.com");
+  });
+});
+
+describe("getLinkDisplayBadges", () => {
+  it("returns collection badge when collection name exists", () => {
+    const badges = getLinkDisplayBadges({
+      collection: { name: "My Collection" },
+    });
+    expect(badges).toEqual([{ type: "collection", label: "My Collection" }]);
+  });
+
+  it("returns tag badges for each tag", () => {
+    const badges = getLinkDisplayBadges({
+      tags: [{ name: "javascript" }, { name: "react" }, { name: "tutorial" }],
+    });
+    expect(badges).toEqual([
+      { type: "tag", label: "javascript" },
+      { type: "tag", label: "react" },
+      { type: "tag", label: "tutorial" },
+    ]);
+  });
+
+  it("skips tags with empty or missing names", () => {
+    const badges = getLinkDisplayBadges({
+      tags: [{ name: "valid" }, { name: "" }, { name: null as unknown as string }, {}],
+    });
+    expect(badges).toEqual([{ type: "tag", label: "valid" }]);
+  });
+
+  it("returns PDF format badge when pdf is available", () => {
+    const badges = getLinkDisplayBadges({
+      pdf: "/path/to/file.pdf",
+    });
+    expect(badges).toContainEqual({ type: "format", label: "PDF" });
+  });
+
+  it("returns Readable format badge when readable is available", () => {
+    const badges = getLinkDisplayBadges({
+      readable: "/path/to/readable",
+    });
+    expect(badges).toContainEqual({ type: "format", label: "Readable" });
+  });
+
+  it("returns Webpage format badge when monolith is available", () => {
+    const badges = getLinkDisplayBadges({
+      monolith: "/path/to/monolith.html",
+    });
+    expect(badges).toContainEqual({ type: "format", label: "Webpage" });
+  });
+
+  it("returns Screenshot format badge when image is available", () => {
+    const badges = getLinkDisplayBadges({
+      image: "/path/to/screenshot.png",
+    });
+    expect(badges).toContainEqual({ type: "format", label: "Screenshot" });
+  });
+
+  it("excludes formats that are 'unavailable'", () => {
+    const badges = getLinkDisplayBadges({
+      pdf: "unavailable",
+      readable: "unavailable",
+      monolith: "unavailable",
+      image: "unavailable",
+    });
+    const formatBadges = badges.filter((b) => b.type === "format");
+    expect(formatBadges).toHaveLength(0);
+  });
+
+  it("excludes formats that are null or undefined", () => {
+    const badges = getLinkDisplayBadges({
+      pdf: null,
+      readable: undefined,
+      monolith: null,
+      image: undefined,
+    });
+    const formatBadges = badges.filter((b) => b.type === "format");
+    expect(formatBadges).toHaveLength(0);
+  });
+
+  it("combines collection, tags, and formats in order", () => {
+    const badges = getLinkDisplayBadges({
+      collection: { name: "Work" },
+      tags: [{ name: "important" }, { name: "docs" }],
+      pdf: "/files/doc.pdf",
+      readable: "/files/readable",
+      monolith: "/files/monolith.html",
+      image: "/files/screenshot.png",
+    });
+    expect(badges).toEqual([
+      { type: "collection", label: "Work" },
+      { type: "tag", label: "important" },
+      { type: "tag", label: "docs" },
+      { type: "format", label: "PDF" },
+      { type: "format", label: "Readable" },
+      { type: "format", label: "Webpage" },
+      { type: "format", label: "Screenshot" },
+    ]);
+  });
+
+  it("returns empty array for undefined link", () => {
+    expect(getLinkDisplayBadges(undefined)).toEqual([]);
+  });
+
+  it("returns empty array for null link", () => {
+    expect(getLinkDisplayBadges(null)).toEqual([]);
+  });
+
+  it("returns empty array for link with no badge-relevant fields", () => {
+    expect(getLinkDisplayBadges({})).toEqual([]);
+  });
+});
+
+describe("getLinkExternalOpenUrl", () => {
+  it("returns https URL unchanged", () => {
+    expect(
+      getLinkExternalOpenUrl({
+        url: "https://example.com/path",
+      })
+    ).toBe("https://example.com/path");
+  });
+
+  it("returns http URL unchanged", () => {
+    expect(
+      getLinkExternalOpenUrl({
+        url: "http://example.com/path",
+      })
+    ).toBe("http://example.com/path");
+  });
+
+  it("prepends https:// to domain-like string without protocol", () => {
+    expect(
+      getLinkExternalOpenUrl({
+        url: "example.com",
+      })
+    ).toBe("https://example.com");
+  });
+
+  it("prepends https:// to subdomain without protocol", () => {
+    expect(
+      getLinkExternalOpenUrl({
+        url: "docs.example.co.uk",
+      })
+    ).toBe("https://docs.example.co.uk");
+  });
+
+  it("returns empty string for invalid URL", () => {
+    expect(
+      getLinkExternalOpenUrl({
+        url: "not a url",
+      })
+    ).toBe("");
+  });
+
+  it("returns empty string for empty url", () => {
+    expect(
+      getLinkExternalOpenUrl({
+        url: "",
+      })
+    ).toBe("");
+  });
+
+  it("returns empty string for undefined link", () => {
+    expect(getLinkExternalOpenUrl(undefined)).toBe("");
+  });
+
+  it("returns empty string for null link", () => {
+    expect(getLinkExternalOpenUrl(null)).toBe("");
+  });
+
+  it("returns empty string for link without url field", () => {
+    expect(getLinkExternalOpenUrl({})).toBe("");
+  });
+
+  it("preserves path and query string in https URL", () => {
+    expect(
+      getLinkExternalOpenUrl({
+        url: "https://example.com/path/to/page?query=value&foo=bar",
+      })
+    ).toBe("https://example.com/path/to/page?query=value&foo=bar");
+  });
+});
