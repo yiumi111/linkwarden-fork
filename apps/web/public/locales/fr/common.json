@@ -452,6 +452,7 @@
   "new_rss_subscription": "Nouvel abonnement RSS",
   "rss_subscription_deleted": "Abonnement RSS supprimé !",
   "create_rss_subscription": "Créer un abonnement RSS",
+  "edit_rss_subscription": "Modifier l'abonnement RSS",
   "rss_feed": "Flux RSS",
   "pinned_links": "Liens épinglés",
   "recent_links": "Liens récents",

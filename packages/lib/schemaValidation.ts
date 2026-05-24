@@ -253,6 +253,13 @@ export const PostRssSubscriptionSchema = z.object({
   collectionName: z.string().max(50).optional(),
 });
 
+export const PutRssSubscriptionSchema = z.object({
+  name: z.string().max(50).optional(),
+  url: z.string().url().max(2048).optional(),
+  collectionId: z.number().optional(),
+  collectionName: z.string().max(50).optional(),
+});
+
 export const PostTagSchema = z.object({
   tags: z.array(
     z.object({
