@@ -27,6 +27,7 @@ import { Separator } from "@/components/ui/separator";
 import { useDraggable } from "@dnd-kit/core";
 import { cn } from "@linkwarden/lib/utils";
 import { TFunction } from "i18next";
+import { getLinkDisplayTitle } from "@/lib/client/linkDisplayMeta";
 
 type Props = {
   link: LinkIncludingShortenedCollectionAndTags;

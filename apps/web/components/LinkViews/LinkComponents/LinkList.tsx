@@ -18,6 +18,7 @@ import LinkFormats from "./LinkFormats";
 import openLink from "@/lib/client/openLink";
 import { useDraggable } from "@dnd-kit/core";
 import { TFunction } from "i18next";
+import { getLinkDisplayTitle } from "@/lib/client/linkDisplayMeta";
 
 type Props = {
   link: LinkIncludingShortenedCollectionAndTags;
@@ -98,7 +99,7 @@ function LinkList({
             {show.name && (
               <div className="flex gap-1 mr-20">
                 <p className="truncate text-primary">
-                  {unescapeString(link.name)}
+                  {unescapeString(getLinkDisplayTitle(link)) || t("untitled")}
                 </p>
                 {show.preserved_formats &&
                   link.type === "url" &&

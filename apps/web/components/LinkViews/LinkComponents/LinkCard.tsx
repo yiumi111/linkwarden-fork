@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { useDraggable } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
 import { TFunction } from "i18next";
+import { getLinkDisplayTitle } from "@/lib/client/linkDisplayMeta";
 
 type Props = {
   link: LinkIncludingShortenedCollectionAndTags;
@@ -143,7 +144,7 @@ function LinkCard({
             <div className="p-3 flex flex-col gap-2">
               {show.name && (
                 <p className="truncate w-full text-primary text-sm">
-                  {unescapeString(link.name)}
+                  {unescapeString(getLinkDisplayTitle(link)) || t("untitled")}
                 </p>
               )}
 

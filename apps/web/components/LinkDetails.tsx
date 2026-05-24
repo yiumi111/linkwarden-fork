@@ -37,6 +37,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Separator } from "./ui/separator";
+import { getLinkDisplayTitle, getLinkExternalOpenUrl, getLinkDisplayBadges } from "@/lib/client/linkDisplayMeta";
 
 type Props = {
   className?: string;
@@ -286,7 +287,7 @@ export default function LinkDetails({
               <p
                 className={clsx("relative w-fit", !link.name && "text-neutral")}
               >
-                {unescapeString(link.name) || t("untitled")}
+                {unescapeString(getLinkDisplayTitle(link)) || t("untitled")}
               </p>
             </div>
           )}
@@ -317,7 +318,7 @@ export default function LinkDetails({
 
               <div className="relative">
                 <div className="rounded-md p-2 bg-base-200 hide-scrollbar overflow-x-auto whitespace-nowrap flex justify-between items-center gap-2 pr-14">
-                  <Link href={link.url} title={link.url} target="_blank">
+                  <Link href={getLinkExternalOpenUrl(link.url) || link.url || ""} title={link.url} target="_blank">
                     {link.url}
                   </Link>
                   <div className="absolute right-0 px-2 bg-base-200">
@@ -502,60 +503,38 @@ export default function LinkDetails({
               </div>
 
               <div className={`flex flex-col rounded-md p-3 bg-base-200`}>
-                {formatAvailable(link, "monolith") ? (
-                  <>
-                    <PreservedFormatRow
-                      name={t("webpage")}
-                      icon={"bi-filetype-html"}
-                      format={ArchivedFormat.monolith}
-                      link={link}
-                      downloadable={true}
-                    />
-                    <Separator className="my-3" />
-                  </>
-                ) : undefined}
-
-                {formatAvailable(link, "image") ? (
-                  <>
-                    <PreservedFormatRow
-                      name={t("screenshot")}
-                      icon={"bi-file-earmark-image"}
-                      format={
-                        link?.image?.endsWith("png")
-                          ? ArchivedFormat.png
-                          : ArchivedFormat.jpeg
-                      }
-                      link={link}
-                      downloadable={true}
-                    />
-                    <Separator className="my-3" />
-                  </>
-                ) : undefined}
-
-                {formatAvailable(link, "pdf") ? (
-                  <>
-                    <PreservedFormatRow
-                      name={t("pdf")}
-                      icon={"bi-file-earmark-pdf"}
-                      format={ArchivedFormat.pdf}
-                      link={link}
-                      downloadable={true}
-                    />
-                    <Separator className="my-3" />
-                  </>
-                ) : undefined}
-
-                {formatAvailable(link, "readable") ? (
-                  <>
-                    <PreservedFormatRow
-                      name={t("readable")}
-                      icon={"bi-file-earmark-text"}
-                      format={ArchivedFormat.readability}
-                      link={link}
-                    />
-                    <Separator className="my-3" />
-                  </>
-                ) : undefined}
+                {getLinkDisplayBadges(link).filter(b => b.type === 'format').map((badge) => {
+                  const getIconClass = (label: string) => {
+                    switch (label) {
+                      case 'Webpage': return 'bi-filetype-html';
+                      case 'Screenshot': return 'bi-file-earmark-image';
+                      case 'PDF': return 'bi-file-earmark-pdf';
+                      case 'Readable': return 'bi-file-earmark-text';
+                      default: return '';
+                    }
+                  };
+                  const getTitleKey = (label: string) => {
+                    switch (label) {
+                      case 'Webpage': return 'webpage';
+                      case 'Screenshot': return 'screenshot';
+                      case 'PDF': return 'pdf';
+                      case 'Readable': return 'readable';
+                      default: return '';
+                    }
+                  };
+                  return (
+                    <React.Fragment key={badge.label}>
+                      <PreservedFormatRow
+                        name={t(getTitleKey(badge.label))}
+                        icon={getIconClass(badge.label)}
+                        format={badge.format as ArchivedFormat}
+                        link={link}
+                        downloadable={badge.label !== 'Readable'}
+                      />
+                      <Separator className="my-3" />
+                    </React.Fragment>
+                  );
+                })}
 
                 {!isReady() && !atLeastOneFormatAvailable(link) ? (
                   <div

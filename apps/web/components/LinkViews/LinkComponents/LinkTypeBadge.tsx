@@ -1,23 +1,14 @@
 import { LinkIncludingShortenedCollectionAndTags } from "@linkwarden/types/global";
 import Link from "next/link";
-import React, { useEffect, useState } from "react";
+import React from "react";
+import { getLinkDisplaySubtitle, getLinkExternalOpenUrl } from "@/lib/client/linkDisplayMeta";
 
 function LinkTypeBadge({
   link,
 }: {
   link: LinkIncludingShortenedCollectionAndTags;
 }) {
-  const [url, setUrl] = useState("");
-
-  useEffect(() => {
-    if (link.type === "url" && link.url) {
-      try {
-        setUrl(new URL(link.url).host.toLowerCase());
-      } catch (error) {
-        console.log(error);
-      }
-    }
-  }, [link]);
+  const url = getLinkDisplaySubtitle(link);
 
   const typeIcon = () => {
     switch (link.type) {
@@ -32,7 +23,7 @@ function LinkTypeBadge({
 
   return link.url && url ? (
     <Link
-      href={link.url || ""}
+      href={getLinkExternalOpenUrl(link.url) || link.url || ""}
       target="_blank"
       title={link.url || ""}
       onClick={(e) => {

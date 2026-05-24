@@ -27,6 +27,8 @@ import ToggleDarkMode from "../ToggleDarkMode";
 import TextStyleDropdown from "../TextStyleDropdown";
 import HighlightDrawer from "../HighlightDrawer";
 
+import { getLinkDisplayBadges } from "@/lib/client/linkDisplayMeta";
+
 type Props = {
   link: LinkIncludingShortenedCollectionAndTags;
   format?: ArchivedFormat;
@@ -159,54 +161,15 @@ const PreservationNavbar = ({ link, format, className }: Props) => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            {formatAvailable(link, "readable") && (
+            {getLinkDisplayBadges(link).filter(b => b.type === 'format').map(badge => (
               <DropdownMenuCheckboxItem
+                key={badge.format}
                 onSelect={() =>
                   router.push(
                     {
                       query: {
                         ...router.query,
-                        format: ArchivedFormat.readability,
-                      },
-                    },
-                    undefined,
-                    { shallow: true }
-                  )
-                }
-                checked={format === ArchivedFormat.readability}
-              >
-                {t("readable")}
-              </DropdownMenuCheckboxItem>
-            )}
-            {formatAvailable(link, "monolith") && (
-              <DropdownMenuCheckboxItem
-                onSelect={() =>
-                  router.push(
-                    {
-                      query: {
-                        ...router.query,
-                        format: ArchivedFormat.monolith,
-                      },
-                    },
-                    undefined,
-                    { shallow: true }
-                  )
-                }
-                checked={format === ArchivedFormat.monolith}
-              >
-                {t("webpage")}
-              </DropdownMenuCheckboxItem>
-            )}
-            {formatAvailable(link, "image") && (
-              <DropdownMenuCheckboxItem
-                onSelect={() =>
-                  router.push(
-                    {
-                      query: {
-                        ...router.query,
-                        format: link?.image?.endsWith(".png")
-                          ? ArchivedFormat.png
-                          : ArchivedFormat.jpeg,
+                        format: badge.format,
                       },
                     },
                     undefined,
@@ -214,32 +177,14 @@ const PreservationNavbar = ({ link, format, className }: Props) => {
                   )
                 }
                 checked={
-                  format === ArchivedFormat.png ||
-                  format === ArchivedFormat.jpeg
+                  (badge.format === ArchivedFormat.png || badge.format === ArchivedFormat.jpeg)
+                    ? (format === ArchivedFormat.png || format === ArchivedFormat.jpeg)
+                    : format === badge.format
                 }
               >
-                {t("screenshot")}
+                {t(badge.format === ArchivedFormat.monolith ? "webpage" : badge.format === ArchivedFormat.pdf ? "pdf" : badge.format === ArchivedFormat.readability ? "readable" : "screenshot")}
               </DropdownMenuCheckboxItem>
-            )}
-            {formatAvailable(link, "pdf") && (
-              <DropdownMenuCheckboxItem
-                onSelect={() =>
-                  router.push(
-                    {
-                      query: {
-                        ...router.query,
-                        format: ArchivedFormat.pdf,
-                      },
-                    },
-                    undefined,
-                    { shallow: true }
-                  )
-                }
-                checked={format === ArchivedFormat.pdf}
-              >
-                {t("pdf")}
-              </DropdownMenuCheckboxItem>
-            )}
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
 
