@@ -2,11 +2,18 @@ import { RssSubscription } from "@linkwarden/prisma/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 
-interface RssSubscriptionWithCollectionName extends RssSubscription {
+export interface RssSubscriptionWithCollectionName extends RssSubscription {
   collection: {
     name: string;
   };
 }
+
+export type RssSubscriptionPayload = {
+  name: string;
+  url: string;
+  collectionId?: number;
+  collectionName?: string;
+};
 
 const useRssSubscriptions = () => {
   const { status } = useSession();
@@ -28,7 +35,7 @@ const useAddRssSubscription = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (body: Partial<RssSubscription>) => {
+    mutationFn: async (body: RssSubscriptionPayload) => {
       const response = await fetch("/api/v1/rss", {
         body: JSON.stringify(body),
         method: "POST",
@@ -42,7 +49,37 @@ const useAddRssSubscription = () => {
 
       return data.response;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rss-subscriptions"] });
+    },
+  });
+};
+
+const useUpdateRssSubscription = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      rssSubscriptionId,
+      body,
+    }: {
+      rssSubscriptionId: number;
+      body: RssSubscriptionPayload;
+    }) => {
+      const response = await fetch(`/api/v1/rss/${rssSubscriptionId}`, {
+        body: JSON.stringify(body),
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.response);
+
+      return data.response;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rss-subscriptions"] });
     },
   });
@@ -66,4 +103,9 @@ const useDeleteRssSubscription = () => {
   });
 };
 
-export { useRssSubscriptions, useAddRssSubscription, useDeleteRssSubscription };
+export {
+  useRssSubscriptions,
+  useAddRssSubscription,
+  useUpdateRssSubscription,
+  useDeleteRssSubscription,
+};

@@ -2,10 +2,12 @@ import SettingsLayout from "@/layouts/SettingsLayout";
 import { useTranslation } from "next-i18next";
 import getServerSideProps from "@/lib/client/getServerSideProps";
 import { useRssSubscriptions } from "@linkwarden/router/rss";
+import type { RssSubscriptionWithCollectionName } from "@linkwarden/router/rss";
 import DeleteRssSubscriptionModal from "@/components/ModalContent/DeleteRssSubscriptionModal";
-import { ReactElement, useState } from "react";
-import { RssSubscription } from "@linkwarden/prisma/client";
+import { useState } from "react";
+import type { ReactElement } from "react";
 import NewRssSubscriptionModal from "@/components/ModalContent/NewRssSubscriptionModal";
+import EditRssSubscriptionModal from "@/components/ModalContent/EditRssSubscriptionModal";
 import { useConfig } from "@linkwarden/router/config";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -16,13 +18,25 @@ const Page: NextPageWithLayout = () => {
   const { data: rssSubscriptions = [] } = useRssSubscriptions();
 
   const [deleteSubscriptionModal, setDeleteSubscriptionModal] = useState(false);
+  const [editSubscriptionModal, setEditSubscriptionModal] = useState(false);
   const [newSubscriptionModal, setNewSubscriptionModal] = useState(false);
   const [selectedSubscription, setSelectedSubscription] =
-    useState<RssSubscription | null>(null);
+    useState<RssSubscriptionWithCollectionName | null>(null);
 
-  const openDeleteModal = (subscription: RssSubscription) => {
+  const openDeleteModal = (subscription: RssSubscriptionWithCollectionName) => {
     setSelectedSubscription(subscription);
     setDeleteSubscriptionModal(true);
+  };
+
+  const openEditModal = (subscription: RssSubscriptionWithCollectionName) => {
+    setSelectedSubscription(subscription);
+    setEditSubscriptionModal(true);
+  };
+
+  const closeSubscriptionModal = () => {
+    setDeleteSubscriptionModal(false);
+    setEditSubscriptionModal(false);
+    setSelectedSubscription(null);
   };
 
   const { data: config } = useConfig();
@@ -65,20 +79,29 @@ const Page: NextPageWithLayout = () => {
               </tr>
             </thead>
             <tbody>
-              {rssSubscriptions.map((rssSubscription, i) => (
-                <tr key={i}>
+              {rssSubscriptions.map((rssSubscription) => (
+                <tr key={rssSubscription.id}>
                   <td>{rssSubscription.name}</td>
                   <td>{rssSubscription.url}</td>
                   <td>{rssSubscription.collection.name}</td>
                   <td>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="hover:text-error"
-                      onClick={() => openDeleteModal(rssSubscription)}
-                    >
-                      <i className="bi-x text-lg"></i>
-                    </Button>
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditModal(rssSubscription)}
+                      >
+                        <i className="bi-pencil text-base"></i>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="hover:text-error"
+                        onClick={() => openDeleteModal(rssSubscription)}
+                      >
+                        <i className="bi-x text-lg"></i>
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -91,13 +114,16 @@ const Page: NextPageWithLayout = () => {
           onClose={() => setNewSubscriptionModal(false)}
         />
       )}
+      {editSubscriptionModal && selectedSubscription && (
+        <EditRssSubscriptionModal
+          rssSubscription={selectedSubscription}
+          onClose={closeSubscriptionModal}
+        />
+      )}
       {deleteSubscriptionModal && selectedSubscription && (
         <DeleteRssSubscriptionModal
           rssSubscription={selectedSubscription}
-          onClose={() => {
-            setDeleteSubscriptionModal(false);
-            setSelectedSubscription(null);
-          }}
+          onClose={closeSubscriptionModal}
         />
       )}
     </>

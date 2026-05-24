@@ -246,12 +246,16 @@ export const UpdateTagSchema = z.object({
 
 export type UpdateTagSchemaType = z.infer<typeof UpdateTagSchema>;
 
-export const PostRssSubscriptionSchema = z.object({
-  name: z.string().max(50),
-  url: z.string().url().max(2048),
+const RssSubscriptionSchema = z.object({
+  name: z.string().trim().min(1).max(50),
+  url: z.string().trim().url().max(2048),
   collectionId: z.number().optional(),
-  collectionName: z.string().max(50).optional(),
+  collectionName: z.string().trim().min(1).max(50).optional(),
 });
+
+export const PostRssSubscriptionSchema = RssSubscriptionSchema;
+
+export const UpdateRssSubscriptionSchema = RssSubscriptionSchema;
 
 export const PostTagSchema = z.object({
   tags: z.array(
