@@ -1,0 +1,326 @@
+diff --git a/apps/web/lib/client/linkDisplayMeta.test.ts b/apps/web/lib/client/linkDisplayMeta.test.ts
+new file mode 100644
+index 00000000..e0cd2080
+--- /dev/null
++++ b/apps/web/lib/client/linkDisplayMeta.test.ts
+@@ -0,0 +1,219 @@
++import { describe, it, expect, vi, beforeEach } from "vitest";
++import {
++  getLinkDisplayTitle,
++  getLinkDisplaySubtitle,
++  getLinkDisplayBadges,
++  getLinkExternalOpenUrl,
++} from "./linkDisplayMeta";
++import { ArchivedFormat } from "@linkwarden/types/global";
++
++const createMockLink = (overrides: Partial<any> = {}) => ({
++  id: 1,
++  name: "",
++  url: "",
++  description: "",
++  collection: { id: 1, name: "" },
++  tags: [],
++  pdf: undefined,
++  readable: undefined,
++  monolith: undefined,
++  image: undefined,
++  preview: undefined,
++  type: "url" as const,
++  ...overrides,
++});
++
++describe("getLinkDisplayTitle", () => {
++  it("returns trimmed name when name exists", () => {
++    const link = createMockLink({ name: "  My Link Title  " });
++    expect(getLinkDisplayTitle(link)).toBe("My Link Title");
++  });
++
++  it("returns hostname when name is empty but url exists", () => {
++    const link = createMockLink({ name: "", url: "https://example.com/path" });
++    expect(getLinkDisplayTitle(link)).toBe("example.com");
++  });
++
++  it("returns hostname when name is whitespace only", () => {
++    const link = createMockLink({ name: "   ", url: "https://test.org" });
++    expect(getLinkDisplayTitle(link)).toBe("test.org");
++  });
++
++  it("returns original url when name is empty and url has no valid hostname", () => {
++    const link = createMockLink({ name: "", url: "not-a-valid-url" });
++    expect(getLinkDisplayTitle(link)).toBe("not-a-valid-url");
++  });
++
++  it("returns empty string when link is empty", () => {
++    const link = createMockLink({ name: "", url: "" });
++    expect(getLinkDisplayTitle(link)).toBe("");
++  });
++
++  it("prefers name over url hostname", () => {
++    const link = createMockLink({ name: "Custom Title", url: "https://example.com" });
++    expect(getLinkDisplayTitle(link)).toBe("Custom Title");
++  });
++});
++
++describe("getLinkDisplaySubtitle", () => {
++  it("returns hostname from url", () => {
++    const link = createMockLink({ url: "https://docs.example.com/guide" });
++    expect(getLinkDisplaySubtitle(link)).toBe("docs.example.com");
++  });
++
++  it("falls back to description when no url", () => {
++    const link = createMockLink({ url: "", description: "A useful link description" });
++    expect(getLinkDisplaySubtitle(link)).toBe("A useful link description");
++  });
++
++  it("falls back to trimmed description when url is invalid", () => {
++    const link = createMockLink({ url: "invalid", description: "  Fallback text  " });
++    expect(getLinkDisplaySubtitle(link)).toBe("Fallback text");
++  });
++
++  it("returns empty string when both url and description are empty", () => {
++    const link = createMockLink({ url: "", description: "" });
++    expect(getLinkDisplaySubtitle(link)).toBe("");
++  });
++
++  it("returns hostname before description", () => {
++    const link = createMockLink({
++      url: "https://api.test.io/v1",
++      description: "Some description",
++    });
++    expect(getLinkDisplaySubtitle(link)).toBe("api.test.io");
++  });
++});
++
++describe("getLinkDisplayBadges", () => {
++  beforeEach(() => {
++    vi.mock("@linkwarden/lib/formatStats", () => ({
++      formatAvailable: vi.fn(),
++    }));
++  });
++
++  it("returns collection badge", () => {
++    const link = createMockLink({ collection: { id: 1, name: "Work" } });
++    const badges = getLinkDisplayBadges(link);
++    expect(badges).toContainEqual({ type: "collection", label: "Work" });
++  });
++
++  it("returns multiple tag badges", () => {
++    const link = createMockLink({
++      tags: [{ id: 1, name: "important" }, { id: 2, name: "urgent" }],
++    });
++    const badges = getLinkDisplayBadges(link);
++    expect(badges).toContainEqual({ type: "tag", label: "important" });
++    expect(badges).toContainEqual({ type: "tag", label: "urgent" });
++  });
++
++  it("returns PDF format badge when available", () => {
++    const link = createMockLink({ pdf: "available" });
++    const badges = getLinkDisplayBadges(link);
++    expect(badges).toContainEqual({ type: "format", label: "PDF", format: "pdf" });
++  });
++
++  it("returns Readable format badge when available", () => {
++    const link = createMockLink({ readable: "available" });
++    const badges = getLinkDisplayBadges(link);
++    expect(badges).toContainEqual({ type: "format", label: "Readable", format: "readable" });
++  });
++
++  it("returns Webpage format badge when monolith is available", () => {
++    const link = createMockLink({ monolith: "available" });
++    const badges = getLinkDisplayBadges(link);
++    expect(badges).toContainEqual({ type: "format", label: "Webpage", format: "webpage" });
++  });
++
++  it("returns Screenshot format badge when image is available", () => {
++    const link = createMockLink({ image: "available" });
++    const badges = getLinkDisplayBadges(link);
++    expect(badges).toContainEqual({ type: "format", label: "Screenshot", format: "screenshot" });
++  });
++
++  it("returns empty array when no badges available", () => {
++    const link = createMockLink({
++      collection: { id: 1, name: "" },
++      tags: [],
++      pdf: undefined,
++      readable: undefined,
++      monolith: undefined,
++      image: undefined,
++    });
++    const badges = getLinkDisplayBadges(link);
++    expect(badges).toEqual([]);
++  });
++
++  it("combines collection, tags and formats", () => {
++    const link = createMockLink({
++      collection: { id: 1, name: "Personal" },
++      tags: [{ id: 1, name: "bookmark" }],
++      pdf: "available",
++      readable: "available",
++    });
++    const badges = getLinkDisplayBadges(link);
++    expect(badges.length).toBe(4);
++    expect(badges).toContainEqual({ type: "collection", label: "Personal" });
++    expect(badges).toContainEqual({ type: "tag", label: "bookmark" });
++    expect(badges).toContainEqual({ type: "format", label: "PDF", format: "pdf" });
++    expect(badges).toContainEqual({ type: "format", label: "Readable", format: "readable" });
++  });
++});
++
++describe("getLinkExternalOpenUrl", () => {
++  it("keeps http URL as-is", () => {
++    expect(getLinkExternalOpenUrl("http://example.com")).toBe("http://example.com");
++  });
++
++  it("keeps https URL as-is", () => {
++    expect(getLinkExternalOpenUrl("https://secure.example.com/path")).toBe(
++      "https://secure.example.com/path"
++    );
++  });
++
++  it("adds https:// to domain without protocol", () => {
++    expect(getLinkExternalOpenUrl("example.com")).toBe("https://example.com");
++  });
++
++  it("adds https:// to subdomain without protocol", () => {
++    expect(getLinkExternalOpenUrl("docs.example.com")).toBe("https://docs.example.com");
++  });
++
++  it("adds https:// to domain with path", () => {
++    expect(getLinkExternalOpenUrl("example.com/path/to/page")).toBe(
++      "https://example.com/path/to/page"
++    );
++  });
++
++  it("returns empty string for null", () => {
++    expect(getLinkExternalOpenUrl(null)).toBe("");
++  });
++
++  it("returns empty string for undefined", () => {
++    expect(getLinkExternalOpenUrl(undefined)).toBe("");
++  });
++
++  it("returns empty string for empty string", () => {
++    expect(getLinkExternalOpenUrl("")).toBe("");
++  });
++
++  it("returns empty string for whitespace only", () => {
++    expect(getLinkExternalOpenUrl("   ")).toBe("");
++  });
++
++  it("returns empty string for invalid URL-like strings", () => {
++    expect(getLinkExternalOpenUrl("not a domain")).toBe("");
++  });
++
++  it("handles URL with port", () => {
++    expect(getLinkExternalOpenUrl("localhost:3000")).toBe("https://localhost:3000");
++  });
++
++  it("handles subdomain with port", () => {
++    expect(getLinkExternalOpenUrl("api.test.io:8080")).toBe("https://api.test.io:8080");
++  });
++
++  it("trims whitespace from URL", () => {
++    expect(getLinkExternalOpenUrl("  https://example.com  ")).toBe("https://example.com");
++  });
++});
+\ No newline at end of file
+diff --git a/apps/web/lib/client/linkDisplayMeta.ts b/apps/web/lib/client/linkDisplayMeta.ts
+new file mode 100644
+index 00000000..13dc3c0a
+--- /dev/null
++++ b/apps/web/lib/client/linkDisplayMeta.ts
+@@ -0,0 +1,93 @@
++import {
++  ArchivedFormat,
++  LinkIncludingShortenedCollectionAndTags,
++} from "@linkwarden/types/global";
++import { formatAvailable } from "@linkwarden/lib/formatStats";
++
++export type LinkBadge =
++  | { type: "collection"; label: string }
++  | { type: "tag"; label: string }
++  | { type: "format"; label: string; format: "pdf" | "readable" | "webpage" | "screenshot" };
++
++export function getLinkDisplayTitle(link: LinkIncludingShortenedCollectionAndTags): string {
++  if (link.name && link.name.trim()) {
++    return link.name.trim();
++  }
++  if (link.url) {
++    try {
++      const url = new URL(link.url);
++      return url.hostname;
++    } catch {
++      return link.url;
++    }
++  }
++  return "";
++}
++
++export function getLinkDisplaySubtitle(link: LinkIncludingShortenedCollectionAndTags): string {
++  if (link.url) {
++    try {
++      const url = new URL(link.url);
++      return url.hostname;
++    } catch {
++      // continue to description
++    }
++  }
++  if (link.description && link.description.trim()) {
++    return link.description.trim();
++  }
++  return "";
++}
++
++export function getLinkDisplayBadges(link: LinkIncludingShortenedCollectionAndTags): LinkBadge[] {
++  const badges: LinkBadge[] = [];
++
++  if (link.collection?.name) {
++    badges.push({ type: "collection", label: link.collection.name });
++  }
++
++  if (link.tags && link.tags.length > 0) {
++    for (const tag of link.tags) {
++      if (tag.name) {
++        badges.push({ type: "tag", label: tag.name });
++      }
++    }
++  }
++
++  if (formatAvailable(link, "pdf")) {
++    badges.push({ type: "format", label: "PDF", format: "pdf" });
++  }
++  if (formatAvailable(link, "readable")) {
++    badges.push({ type: "format", label: "Readable", format: "readable" });
++  }
++  if (formatAvailable(link, "monolith")) {
++    badges.push({ type: "format", label: "Webpage", format: "webpage" });
++  }
++  if (formatAvailable(link, "image")) {
++    badges.push({ type: "format", label: "Screenshot", format: "screenshot" });
++  }
++
++  return badges;
++}
++
++export function getLinkExternalOpenUrl(url: string | null | undefined): string {
++  if (!url) {
++    return "";
++  }
++
++  const trimmed = url.trim();
++  if (!trimmed) {
++    return "";
++  }
++
++  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
++    return trimmed;
++  }
++
++  const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9\-]*(\.[a-zA-Z0-9][a-zA-Z0-9\-]*)+/;
++  if (domainPattern.test(trimmed)) {
++    return `https://${trimmed}`;
++  }
++
++  return "";
++}
+\ No newline at end of file
